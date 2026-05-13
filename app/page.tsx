@@ -154,7 +154,7 @@ type SaveFilePickerWindow = Window & {
 };
 
 const buttonBase =
-  "rounded-md border px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-zinc-300";
+  "rounded-lg border px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50";
 const localRecordsStorageKey = "meeting-ai-assistant.records";
 const maxConcurrentUploads = 2;
 const transcribePollIntervalMs = 5000;
@@ -1229,44 +1229,41 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f7f4] text-zinc-950">
+    <main className="min-h-screen bg-slate-100 text-slate-800">
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="border-b border-zinc-200 bg-[#fbfbf9] lg:w-80 lg:border-b-0 lg:border-r">
-          <div className="px-5 py-5">
-            <p className="text-xs font-medium text-zinc-500">本地会议整理工具</p>
-            <h1 className="mt-2 text-lg font-semibold tracking-normal text-zinc-950">
-              会议录音转写与会议纪要生成工具
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-zinc-600">上传录音后，系统会自动整理转写文本、会议纪要和会议大纲。</p>
+        <aside className="border-b border-slate-800 bg-[#1a1d21] text-slate-100 lg:w-[265px] lg:border-b-0 lg:border-r">
+          <div className="px-5 py-6">
+            <h1 className="text-xl font-semibold tracking-normal text-white">AI 会议助手</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-400">本地会议录音转写与纪要生成工具</p>
           </div>
 
           <nav className="px-3 pb-5">
             <button
-              className={`${buttonBase} mb-3 w-full border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800`}
+              className={`${buttonBase} mb-3 w-full border-slate-700 bg-slate-800 text-slate-100 shadow-sm hover:bg-slate-700`}
               type="button"
               onClick={openNewMeeting}
             >
-              + 新建会议
+              ＋ 新建会议
             </button>
             <button
-              className={`${buttonBase} mb-3 w-full border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50`}
+              className="mb-5 flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-white"
               type="button"
               onClick={() => setShowSettings(true)}
             >
               系统配置
             </button>
 
-            <div className="mb-2 flex items-center justify-between px-2">
+            <div className="mb-3 flex items-center justify-between px-2">
               <div>
-                <p className="text-sm font-medium text-zinc-700">历史记录</p>
-                <p className="mt-1 text-xs text-zinc-500">默认保留 {recordRetentionDays} 天</p>
+                <p className="text-sm font-medium text-slate-200">最近会议</p>
+                <p className="mt-1 text-xs text-slate-500">默认保留 {recordRetentionDays} 天</p>
               </div>
-              <span className="text-xs text-zinc-500">{records.length} 条记录</span>
+              <span className="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-400">{records.length} 条</span>
             </div>
 
             <div className="mb-3 flex gap-2 px-2">
               <button
-                className={`${buttonBase} flex-1 border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
+                className={`${buttonBase} flex-1 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700`}
                 type="button"
                 disabled={selectedRecordIds.length === 0}
                 onClick={deleteSelectedRecords}
@@ -1274,7 +1271,7 @@ export default function Home() {
                 删除所选
               </button>
               <button
-                className={`${buttonBase} border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
+                className={`${buttonBase} border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700`}
                 type="button"
                 disabled={!hasAnyRecord}
                 onClick={() =>
@@ -1285,9 +1282,9 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="space-y-1">
+            <div className="max-h-[calc(100vh-250px)] space-y-2 overflow-y-auto pr-1">
               {records.length === 0 ? (
-                <div className="rounded-md border border-dashed border-zinc-300 bg-white px-3 py-4 text-sm leading-6 text-zinc-500">
+                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-800/60 px-3 py-4 text-sm leading-6 text-slate-400">
                   暂无历史记录。选择录音后，每个音频会自动生成一条记录。
                 </div>
               ) : null}
@@ -1298,8 +1295,10 @@ export default function Home() {
                 return (
                   <div
                     key={record.id}
-                    className={`rounded-md px-3 py-3 transition ${
-                      isActive ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-700 hover:bg-white hover:shadow-sm"
+                    className={`rounded-xl border px-3 py-3 transition ${
+                      isActive
+                        ? "border-blue-500/70 bg-slate-800 text-white shadow-sm"
+                        : "border-transparent bg-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-800"
                     }`}
                   >
                     <div className="flex gap-2">
@@ -1311,32 +1310,32 @@ export default function Home() {
                       />
                       <button className="min-w-0 flex-1 text-left" type="button" onClick={() => openRecord(record.id)}>
                         <span className="block truncate text-sm font-medium">{record.title}</span>
-                        <span className={`mt-1 block text-xs ${isActive ? "text-zinc-300" : "text-zinc-500"}`}>
+                        <span className={`mt-1 block text-xs ${isActive ? "text-slate-400" : "text-slate-500"}`}>
                           {record.date} · {record.duration}
                         </span>
                         {record.audioFileName ? (
-                          <span className={`mt-1 block truncate text-xs ${isActive ? "text-zinc-300" : "text-zinc-500"}`}>
+                          <span className={`mt-1 block truncate text-xs ${isActive ? "text-slate-400" : "text-slate-500"}`}>
                             {record.audioFileName}
                           </span>
                         ) : null}
-                        <span className={`mt-2 block text-xs ${isActive ? "text-zinc-200" : "text-zinc-500"}`}>
-                          {record.status}
-                          {record.taskStatus === "uploading" && typeof record.uploadProgress === "number"
-                            ? ` · ${record.uploadProgress}%`
-                            : ""}
+                        <span className="mt-2 flex items-center gap-2">
+                          <StatusBadge status={record.taskStatus} label={record.status} />
+                          {record.taskStatus === "uploading" && typeof record.uploadProgress === "number" ? (
+                            <span className={`text-xs ${isActive ? "text-slate-400" : "text-slate-400"}`}>{record.uploadProgress}%</span>
+                          ) : null}
                         </span>
                       </button>
                     </div>
                     <div className="mt-3 flex gap-2 pl-6">
                       <button
-                        className={`text-xs ${isActive ? "text-zinc-200 hover:text-white" : "text-zinc-500 hover:text-zinc-900"}`}
+                        className={`text-xs ${isActive ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-white"}`}
                         type="button"
                         onClick={() => renameRecord(record.id)}
                       >
                         重命名
                       </button>
                       <button
-                        className={`text-xs ${isActive ? "text-zinc-200 hover:text-white" : "text-zinc-500 hover:text-zinc-900"}`}
+                        className={`text-xs ${isActive ? "text-slate-400 hover:text-red-300" : "text-slate-500 hover:text-red-300"}`}
                         type="button"
                         onClick={() => deleteRecord(record.id)}
                       >
@@ -1350,8 +1349,8 @@ export default function Home() {
           </nav>
         </aside>
 
-        <section className="flex-1 px-4 py-4 sm:px-6 lg:px-7">
-          <div className="mx-auto max-w-6xl">
+        <section className="flex-1 px-4 py-5 sm:px-7 lg:px-8">
+          <div className="mx-auto max-w-7xl">
             {showSettings ? (
               <SettingsPanel
                 currentOrigin={currentOrigin}
@@ -1378,167 +1377,142 @@ export default function Home() {
               />
             ) : (
               <>
-            <header className="mb-4 flex flex-col gap-3 border-b border-zinc-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
+            <header className="mb-5 border-b border-slate-200 pb-5 lg:flex lg:items-end lg:justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-500">当前记录</p>
-                <h2 className="mt-1 text-2xl font-semibold tracking-normal text-zinc-950">{activeRecord.title}</h2>
-                <p className="mt-2 text-sm text-zinc-600">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-slate-500">当前会议</p>
+                  {activeRecord.id !== emptyRecord.id ? <StatusBadge status={activeRecord.taskStatus} label={activeRecord.status} /> : null}
+                </div>
+                <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-950">{activeRecord.title}</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-500">
                   {activeRecord.id === emptyRecord.id
                     ? "选择一个或多个会议录音后，系统会自动生成转写文本、会议纪要和会议大纲。"
                     : `${activeRecord.date} · ${activeRecord.duration} · ${activeRecord.status}`}
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-wrap gap-2 lg:mt-0">
                 <button
-                  className={`${buttonBase} border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={`${buttonBase} border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50`}
                   type="button"
                   disabled={!hasUsableTranscript}
                   onClick={handleGenerateReport}
                 >
-                  重新生成纪要/大纲
+                  重新生成纪要
                 </button>
                 <button
-                  className={`${buttonBase} border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={`${buttonBase} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
                   type="button"
-                  disabled={!activeRecord.transcript.trim()}
-                  onClick={() => copyText("转写文本", activeRecord.transcript)}
+                  disabled={!activeRecord.transcript.trim() && !activeRecord.summary.trim() && !activeRecord.outline.trim()}
+                  onClick={() =>
+                    copyText(
+                      "全部内容",
+                      `# 转写文本\n${activeRecord.transcript}\n\n# 会议纪要\n${activeRecord.summary}\n\n# 会议大纲\n${activeRecord.outline}`
+                    )
+                  }
                 >
-                  复制转写
-                </button>
-                <button
-                  className={`${buttonBase} border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
-                  type="button"
-                  disabled={!activeRecord.summary.trim()}
-                  onClick={() => copyText("会议纪要", activeRecord.summary)}
-                >
-                  复制纪要
-                </button>
-                <button
-                  className={`${buttonBase} border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
-                  type="button"
-                  disabled={!activeRecord.outline.trim()}
-                  onClick={() => copyText("会议大纲", activeRecord.outline)}
-                >
-                  复制大纲
+                  复制全部
                 </button>
               </div>
             </header>
 
             {notice ? (
-              <div className="mb-4 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700 shadow-sm">
+              <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
                 {notice}
               </div>
             ) : null}
 
             {generateStatus ? (
-              <div className="mb-4 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700 shadow-sm">
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
                 {generateStatus}
               </div>
             ) : null}
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-              <div className="space-y-4">
-                <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold tracking-normal text-zinc-950">上传会议录音</h3>
-                      <p className="mt-1 text-sm leading-6 text-zinc-600">
-                        系统将自动生成转写文本、会议纪要和会议大纲。
-                      </p>
-                    </div>
-                    <label className={`${buttonBase} cursor-pointer border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800`}>
-                      选择音频文件
-                      <input
-                        className="sr-only"
-                        type="file"
-                        multiple
-                        accept=".mp3,.wav,.m4a,.mp4,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,video/mp4"
-                        onChange={handleAudioFileChange}
-                      />
-                    </label>
-                  </div>
+            <section
+              className={`mb-5 rounded-xl border border-dashed bg-white px-5 py-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition ${
+                isDraggingAudio ? "border-slate-950 ring-2 ring-slate-200" : "border-slate-300"
+              }`}
+              onDragOver={handleAudioDragOver}
+              onDragLeave={handleAudioDragLeave}
+              onDrop={handleAudioDrop}
+            >
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold tracking-normal text-slate-950">上传会议录音</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    支持格式：mp3、wav、m4a、mp4。长音频处理时间会受网络和录音质量影响。
+                  </p>
+                </div>
+                <label className={`${buttonBase} cursor-pointer border-slate-950 bg-slate-950 text-white hover:bg-slate-800`}>
+                  选择音频文件
+                  <input
+                    className="sr-only"
+                    type="file"
+                    multiple
+                    accept=".mp3,.wav,.m4a,.mp4,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,video/mp4"
+                    onChange={handleAudioFileChange}
+                  />
+                </label>
+              </div>
+              {activeRecord.id !== emptyRecord.id ? <TaskInfoPanel record={activeRecord} /> : null}
+            </section>
 
-                  <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm leading-6 text-zinc-600">
-                    <p className="font-medium text-zinc-900">智能会议转写</p>
-                    <p className="mt-1">长音频处理时间会受网络和录音质量影响，请保持页面打开直到任务提交成功。</p>
-                  </div>
-
-                  <div
-                    className={`mt-3 rounded-md border border-dashed px-4 py-4 text-sm transition ${
-                      isDraggingAudio
-                        ? "border-zinc-900 bg-white text-zinc-800 shadow-sm"
-                        : "border-zinc-300 bg-zinc-50 text-zinc-600"
-                    }`}
-                    onDragOver={handleAudioDragOver}
-                    onDragLeave={handleAudioDragLeave}
-                    onDrop={handleAudioDrop}
-                  >
-                    <p className="font-medium text-zinc-800">支持格式：mp3、wav、m4a、mp4</p>
-                  </div>
-
-                  {activeRecord.id !== emptyRecord.id ? <TaskInfoPanel record={activeRecord} /> : null}
-                </section>
-
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(380px,5fr)]">
+              <div>
                 <EditablePanel
                   label="转写文本"
                   helper="会议录音转成文字后会显示在这里，可直接修正错字和表达。"
-                  minHeight="min-h-[360px]"
+                  minHeight="min-h-[590px]"
                   value={activeRecord.transcript}
                   placeholder="等待上传录音后生成转写文本"
+                  copyLabel="复制"
+                  onCopy={() => copyText("转写文本", activeRecord.transcript)}
                   onChange={(value) => updateRecord("transcript", value)}
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <EditablePanel
                   label="会议纪要"
                   helper="根据转写内容整理出的结构化纪要，可继续编辑。"
-                  minHeight="min-h-[270px]"
+                  minHeight="min-h-[300px]"
                   value={activeRecord.summary}
                   placeholder="等待生成会议纪要"
+                  copyLabel="复制"
+                  onCopy={() => copyText("会议纪要", activeRecord.summary)}
                   onChange={(value) => updateRecord("summary", value)}
                 />
 
                 <EditablePanel
                   label="会议大纲"
                   helper="用于后续汇报或整理材料的正式大纲，可按需要调整。"
-                  minHeight="min-h-[270px]"
+                  minHeight="min-h-[300px]"
                   value={activeRecord.outline}
                   placeholder="等待生成会议大纲"
+                  copyLabel="复制"
+                  onCopy={() => copyText("会议大纲", activeRecord.outline)}
                   onChange={(value) => updateRecord("outline", value)}
                 />
-
-                <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold tracking-normal text-zinc-950">导出结果</h3>
-                      <p className="mt-1 text-sm leading-6 text-zinc-600">
-                        后续可将最终内容导出为常用办公文件。
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className={`${buttonBase} border-zinc-300 bg-zinc-50 text-zinc-700 hover:bg-white`}
-                        type="button"
-                        disabled={isExportingWord || !canExportRecord(activeRecord)}
-                        onClick={handleExportWord}
-                      >
-                        {isExportingWord ? "导出中..." : "导出 Word"}
-                      </button>
-                      <button
-                        className={`${buttonBase} border-zinc-300 bg-zinc-50 text-zinc-700 hover:bg-white`}
-                        type="button"
-                        disabled={isExportingPdf || !canExportRecord(activeRecord)}
-                        onClick={handleExportPdf}
-                      >
-                        {isExportingPdf ? "导出中..." : "导出 PDF"}
-                      </button>
-                    </div>
-                  </div>
-                </section>
               </div>
             </div>
+            <footer className="mt-5 flex justify-end gap-2 border-t border-slate-200 pt-5">
+              <button
+                className={`${buttonBase} border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50`}
+                type="button"
+                disabled={isExportingPdf || !canExportRecord(activeRecord)}
+                onClick={handleExportPdf}
+              >
+                {isExportingPdf ? "导出中..." : "导出 PDF"}
+              </button>
+              <button
+                className={`${buttonBase} border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50`}
+                type="button"
+                disabled={isExportingWord || !canExportRecord(activeRecord)}
+                onClick={handleExportWord}
+              >
+                {isExportingWord ? "导出中..." : "导出 Word"}
+              </button>
+            </footer>
               </>
             )}
           </div>
@@ -1604,17 +1578,17 @@ function SettingsPanel({
   onClose: () => void;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 md:flex-row md:items-start md:justify-between">
+    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-zinc-500">初始化设置</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-zinc-950">系统配置</h2>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
+          <p className="text-sm font-medium text-slate-500">初始化设置</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">系统配置</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
             请填写客户自己的阿里云百炼 API Key 和 OSS 配置。配置会保存到本机后端，不会放在浏览器缓存里。
           </p>
         </div>
         <button
-          className={`${buttonBase} border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50`}
+          className={`${buttonBase} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
           type="button"
           onClick={onClose}
         >
@@ -1623,15 +1597,15 @@ function SettingsPanel({
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-          <h3 className="text-base font-semibold text-zinc-950">百炼 / DashScope</h3>
-          <p className="mt-1 text-sm text-zinc-600">
+        <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <h3 className="text-base font-semibold text-slate-950">百炼 / DashScope</h3>
+          <p className="mt-2 text-sm text-slate-600">
             当前状态：{dashscopeStatus}
           </p>
-          <label className="mt-4 block text-sm font-medium text-zinc-700">
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             DASHSCOPE_API_KEY
             <input
-              className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               type="password"
               value={form.dashscopeApiKey}
               placeholder={settings?.dashscopeApiKeySaved ? "已配置，留空则保留" : "请输入百炼 API Key"}
@@ -1639,7 +1613,7 @@ function SettingsPanel({
             />
           </label>
           <button
-            className={`${buttonBase} mt-4 border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
+            className={`${buttonBase} mt-4 border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
             type="button"
             disabled={isTestingDashScope}
             onClick={onTestDashScope}
@@ -1648,10 +1622,10 @@ function SettingsPanel({
           </button>
         </section>
 
-        <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-          <h3 className="text-base font-semibold text-zinc-950">OSS 前端直传</h3>
-          <p className="mt-1 text-sm text-zinc-600">当前状态：{ossStatus}</p>
-          <label className="mt-3 flex items-center gap-2 text-sm font-medium text-zinc-700">
+        <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <h3 className="text-base font-semibold text-slate-950">OSS 前端直传</h3>
+          <p className="mt-2 text-sm text-slate-600">当前状态：{ossStatus}</p>
+          <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
               checked={form.ossEnabled}
@@ -1659,10 +1633,10 @@ function SettingsPanel({
             />
             启用 OSS 上传
           </label>
-          <label className="mt-4 block text-sm font-medium text-zinc-700">
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             OSS_REGION
             <select
-              className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               value={form.ossRegion}
               onChange={(event) => onChange({ ossRegion: event.target.value })}
             >
@@ -1673,30 +1647,30 @@ function SettingsPanel({
               ))}
             </select>
           </label>
-          <label className="mt-4 block text-sm font-medium text-zinc-700">
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             OSS_BUCKET
             <input
-              className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               type="text"
               value={form.ossBucket}
               placeholder="请输入您的 OSS Bucket 名称"
               onChange={(event) => onChange({ ossBucket: event.target.value })}
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-zinc-700">
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             OSS_ACCESS_KEY_ID
             <input
-              className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               type="password"
               value={form.ossAccessKeyId}
               placeholder={settings?.ossAccessKeyIdSaved ? "已配置，留空则保留" : "请输入 OSS AccessKey ID"}
               onChange={(event) => onChange({ ossAccessKeyId: event.target.value })}
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-zinc-700">
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             OSS_ACCESS_KEY_SECRET
             <input
-              className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               type="password"
               value={form.ossAccessKeySecret}
               placeholder={settings?.ossAccessKeySecretSaved ? "已配置，留空则保留" : "请输入 OSS AccessKey Secret"}
@@ -1704,7 +1678,7 @@ function SettingsPanel({
             />
           </label>
           <button
-            className={`${buttonBase} mt-4 border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50`}
+            className={`${buttonBase} mt-4 border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
             type="button"
             disabled={isTestingOss}
             onClick={onTestOss}
@@ -1714,24 +1688,24 @@ function SettingsPanel({
         </section>
       </div>
 
-      <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4 text-sm leading-6 text-zinc-600">
-        <p className="font-medium text-zinc-900">OSS CORS 提示</p>
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+        <p className="font-medium text-slate-950">OSS CORS 提示</p>
         <p className="mt-1">如使用 OSS 前端直传，请在阿里云 OSS 控制台配置 CORS。</p>
         <p className="mt-1">
           请在 OSS 控制台的 CORS Origin 中添加以下地址：
-          <span className="ml-1 font-medium text-zinc-900">{currentOrigin || "当前访问地址"}</span>
+          <span className="ml-1 font-medium text-slate-950">{currentOrigin || "当前访问地址"}</span>
         </p>
       </div>
 
       {settingsStatus ? (
-        <div className="mt-5 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700 shadow-sm">
+        <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
           {settingsStatus}
         </div>
       ) : null}
 
       <div className="mt-5 flex flex-wrap gap-2">
         <button
-          className={`${buttonBase} border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50`}
+          className={`${buttonBase} border-slate-950 bg-slate-950 text-white hover:bg-slate-800`}
           type="button"
           disabled={isSavingSettings}
           onClick={onSave}
@@ -1745,49 +1719,75 @@ function SettingsPanel({
 
 function TaskInfoPanel({ record }: { record: MeetingRecord }) {
   return (
-    <dl className="mt-3 grid gap-2 rounded-md border border-zinc-200 bg-white p-3 text-sm sm:grid-cols-2">
+    <dl className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
       <div>
-        <dt className="text-xs text-zinc-500">音频文件名</dt>
-        <dd className="mt-1 break-all font-medium text-zinc-800">{record.audioFileName || "未选择"}</dd>
+        <dt className="text-xs text-slate-500">音频文件名</dt>
+        <dd className="mt-1 break-all font-medium text-slate-800">{record.audioFileName || "未选择"}</dd>
       </div>
       <div>
-        <dt className="text-xs text-zinc-500">文件大小</dt>
-        <dd className="mt-1 font-medium text-zinc-800">{record.audioFileSize || "未明确"}</dd>
+        <dt className="text-xs text-slate-500">文件大小</dt>
+        <dd className="mt-1 font-medium text-slate-800">{record.audioFileSize || "未明确"}</dd>
       </div>
       <div>
-        <dt className="text-xs text-zinc-500">文件类型</dt>
-        <dd className="mt-1 font-medium text-zinc-800">{record.audioFileType || "未明确"}</dd>
+        <dt className="text-xs text-slate-500">文件类型</dt>
+        <dd className="mt-1 font-medium text-slate-800">{record.audioFileType || "未明确"}</dd>
       </div>
       <div>
-        <dt className="text-xs text-zinc-500">处理状态</dt>
-        <dd className="mt-1 font-medium text-zinc-800">{record.status}</dd>
+        <dt className="text-xs text-slate-500">处理状态</dt>
+        <dd className="mt-1">
+          <StatusBadge status={record.taskStatus} label={record.status} />
+        </dd>
       </div>
       <div>
-        <dt className="text-xs text-zinc-500">创建时间</dt>
-        <dd className="mt-1 font-medium text-zinc-800">{formatDateTime(record.createdAt)}</dd>
+        <dt className="text-xs text-slate-500">创建时间</dt>
+        <dd className="mt-1 font-medium text-slate-800">{formatDateTime(record.createdAt)}</dd>
       </div>
       {["uploading", "queued", "failed"].includes(record.taskStatus) || typeof record.uploadProgress === "number" ? (
         <div className="sm:col-span-2">
           <div className="flex items-center justify-between gap-3">
-            <dt className="text-xs text-zinc-500">上传进度</dt>
-            <dd className="text-xs font-medium text-zinc-700">{record.uploadProgress ?? 0}%</dd>
+            <dt className="text-xs text-slate-500">上传进度</dt>
+            <dd className="text-xs font-medium text-slate-700">{record.uploadProgress ?? 0}%</dd>
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100">
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
             <div
-              className="h-full rounded-full bg-zinc-900 transition-all"
+              className="h-full rounded-full bg-slate-950 transition-all"
               style={{ width: `${record.uploadProgress ?? 0}%` }}
             />
           </div>
-          {record.uploadNotice ? <p className="mt-2 text-xs leading-5 text-zinc-600">{record.uploadNotice}</p> : null}
+          {record.uploadNotice ? <p className="mt-2 text-xs leading-5 text-slate-600">{record.uploadNotice}</p> : null}
         </div>
       ) : null}
       {record.errorMessage ? (
-        <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">
+        <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">
           {record.errorMessage}
         </div>
       ) : null}
     </dl>
   );
+}
+
+function StatusBadge({ status, label }: { status: TaskStatus; label: string }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${getStatusBadgeClass(status)}`}>
+      {label}
+    </span>
+  );
+}
+
+function getStatusBadgeClass(status: TaskStatus) {
+  if (status === "completed") {
+    return "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200";
+  }
+
+  if (status === "failed") {
+    return "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200";
+  }
+
+  if (status === "uploading" || status === "transcribing" || status === "summarizing" || status === "still_processing") {
+    return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200";
+  }
+
+  return "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200";
 }
 
 type WordExportTools = {
@@ -1914,6 +1914,8 @@ function EditablePanel({
   value,
   minHeight,
   placeholder,
+  copyLabel,
+  onCopy,
   onChange
 }: {
   label: string;
@@ -1921,16 +1923,30 @@ function EditablePanel({
   value: string;
   minHeight: string;
   placeholder?: string;
+  copyLabel?: string;
+  onCopy?: () => void;
   onChange: (value: string) => void;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="mb-3">
-        <h3 className="text-base font-semibold tracking-normal text-zinc-950">{label}</h3>
-        <p className="mt-1 text-sm leading-6 text-zinc-600">{helper}</p>
+    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-normal text-slate-950">{label}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{helper}</p>
+        </div>
+        {onCopy ? (
+          <button
+            className={`${buttonBase} shrink-0 border-slate-200 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-50`}
+            type="button"
+            disabled={!value.trim()}
+            onClick={onCopy}
+          >
+            {copyLabel ?? "复制"}
+          </button>
+        ) : null}
       </div>
       <textarea
-        className={`w-full resize-y rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm leading-7 text-zinc-800 outline-none transition focus:border-zinc-400 focus:bg-white focus:ring-2 focus:ring-zinc-200 ${minHeight}`}
+        className={`w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200 ${minHeight}`}
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}

@@ -12,6 +12,6 @@
 
 body {
   margin: 0;
-  background: #fafafa;
-  font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f3f4f6;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
