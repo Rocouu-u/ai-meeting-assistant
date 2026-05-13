@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { getWritableDataDir, getWritableDataPath } from "./storage-paths";
 
 export type RuntimeConfig = {
   dashscopeApiKey?: string;
@@ -28,8 +28,8 @@ export type PublicRuntimeConfig = {
   setupComplete: boolean;
 };
 
-const storageDir = path.join(process.cwd(), "storage");
-const configPath = path.join(storageDir, "config.json");
+const storageDir = getWritableDataDir();
+const configPath = getWritableDataPath("config.json");
 const defaultOssRegion = "oss-cn-hangzhou";
 
 export function readRuntimeConfig(): RuntimeConfig {

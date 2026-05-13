@@ -2,11 +2,57 @@
   "name": "meeting-ai-assistant",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "NEXT_DIST_DIR=.next-dev-3006 WATCHPACK_POLLING=true next dev -p 3006 -H 127.0.0.1",
     "build": "NEXT_DIST_DIR=.next-build next build",
     "start": "NEXT_DIST_DIR=.next-build next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "electron": "electron .",
+    "prepare:electron": "node scripts/prepare-electron-build.mjs",
+    "dist:win": "npm run typecheck && npm run build && npm run prepare:electron && electron-builder --win dir --x64"
+  },
+  "build": {
+    "appId": "com.local.meetingassistant",
+    "productName": "会议助手",
+    "asar": false,
+    "directories": {
+      "output": "dist-electron"
+    },
+    "extraMetadata": {
+      "dependencies": {}
+    },
+    "files": [
+      "electron/**/*",
+      ".next-build/standalone/**/*",
+      "next.config.ts",
+      "package.json",
+      "!node_modules/**/*",
+      "!**/.env",
+      "!**/.env.*",
+      "!storage/**/*",
+      "!.next-build/cache/**/*",
+      "!.next-build/standalone/storage/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor",
+        "to": "vendor",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
   },
   "dependencies": {
     "docx": "^9.6.1",
@@ -21,6 +67,8 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "autoprefixer": "^10.4.21",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3"

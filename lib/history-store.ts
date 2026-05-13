@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { getBundledResourcePath, getWritableDataDir, getWritableDataPath } from "./storage-paths";
 
 export type StoredMeetingRecord = {
   id: string;
@@ -22,8 +23,8 @@ export type StoredMeetingRecord = {
   updatedAt?: string;
 };
 
-const storageDir = path.join(process.cwd(), "storage");
-const databasePath = path.join(storageDir, "app.db");
+const storageDir = getWritableDataDir();
+const databasePath = getWritableDataPath("app.db");
 
 export function listMeetingRecords() {
   initDatabase();
@@ -259,7 +260,7 @@ function selectColumns() {
 }
 
 function runSql(sql: string) {
-  return execFileSync("sqlite3", [databasePath], {
+  return execFileSync(getSqliteExecutablePath(), [databasePath], {
     input: sql,
     encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024
@@ -267,10 +268,26 @@ function runSql(sql: string) {
 }
 
 function runSqlJson(sql: string) {
-  return execFileSync("sqlite3", ["-json", databasePath, sql], {
+  return execFileSync(getSqliteExecutablePath(), ["-json", databasePath, sql], {
     encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024
   });
+}
+
+function getSqliteExecutablePath() {
+  if (process.env.SQLITE3_PATH && existsSync(process.env.SQLITE3_PATH)) {
+    return process.env.SQLITE3_PATH;
+  }
+
+  const executableName = process.platform === "win32" ? "sqlite3.exe" : "sqlite3";
+  const candidates = [
+    getBundledResourcePath("vendor", "sqlite", "win32", executableName),
+    getBundledResourcePath("app", "vendor", "sqlite", "win32", executableName),
+    path.join(process.cwd(), "vendor", "sqlite", "win32", executableName)
+  ];
+  const bundledExecutable = candidates.find((candidate) => existsSync(candidate));
+
+  return bundledExecutable || "sqlite3";
 }
 
 function sqlText(value: string) {
