@@ -33,6 +33,8 @@ export async function POST(request: Request) {
       const provider = getSpeechProvider();
       const transcriptResult = await provider.submitAudioUrl(audioUrl, {
         diarizationEnabled,
+        sourceFileName: String(formData.get("fileName") || "OSS 音频文件"),
+        sourceFileType: String(formData.get("fileType") || ""),
         uploadElapsedMs: Number.isFinite(directUploadElapsedMs) ? directUploadElapsedMs : 0
       });
 
@@ -42,6 +44,8 @@ export async function POST(request: Request) {
         rawStatus: transcriptResult.rawStatus,
         transcriptId: transcriptResult.transcriptId,
         message: transcriptResult.message,
+        transcript: transcriptResult.transcript,
+        segments: transcriptResult.segments,
         transcribeMode: transcribeMode === "fast" ? "fast" : "standard",
         file: {
           name: String(formData.get("fileName") || "OSS 音频文件"),
@@ -125,6 +129,8 @@ export async function POST(request: Request) {
       rawStatus: transcriptResult.rawStatus,
       transcriptId: transcriptResult.transcriptId,
       message: transcriptResult.message,
+      transcript: transcriptResult.transcript,
+      segments: transcriptResult.segments,
       transcribeMode: transcribeMode === "fast" ? "fast" : "standard",
       file: {
         name: file.name,

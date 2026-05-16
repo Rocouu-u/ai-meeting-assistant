@@ -34,7 +34,8 @@ export async function GET(request: Request, context: RouteContext) {
       rawStatus: transcript.rawStatus,
       message: transcript.message,
       transcript: transcript.transcript,
-      elapsedMs: transcript.elapsedMs
+      elapsedMs: transcript.elapsedMs,
+      segments: transcript.segments
     });
   } catch (error) {
     if (error instanceof ProviderError) {

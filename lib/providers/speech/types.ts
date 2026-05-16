@@ -1,6 +1,8 @@
 export type SpeechSubmitOptions = {
   diarizationEnabled?: boolean;
   fileBuffer?: Buffer;
+  sourceFileName?: string;
+  sourceFileType?: string;
   uploadElapsedMs?: number;
 };
 
@@ -8,11 +10,22 @@ export type SpeechPollOptions = {
   diarizationEnabled?: boolean;
 };
 
+export type TranscriptSegment = {
+  text: string;
+  speakerId?: string | null;
+  speakerName?: string | null;
+  beginTime?: number | null;
+  endTime?: number | null;
+  timestamp?: string;
+};
+
 export type SpeechSubmitResult = {
   status: "queued" | "processing" | "completed" | "error";
   transcriptId: string;
   message: string;
   rawStatus?: string;
+  transcript?: string;
+  segments?: TranscriptSegment[];
 };
 
 export type SpeechPollResult = {
@@ -21,6 +34,7 @@ export type SpeechPollResult = {
   transcript?: string;
   rawStatus?: string;
   elapsedMs?: number;
+  segments?: TranscriptSegment[];
 };
 
 export type SpeechProvider = {

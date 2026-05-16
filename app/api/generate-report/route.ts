@@ -44,7 +44,8 @@ export async function POST(request: Request) {
         elapsedMs: Date.now() - startedAt,
         transcriptLength: transcript.length,
         summaryLength: result.summary.length,
-        outlineLength: result.outline.length
+        outlineLength: result.outline.length,
+        actionItemCount: result.actionItems.length
       })
     );
 
@@ -52,7 +53,8 @@ export async function POST(request: Request) {
       ok: true,
       message: result.message,
       summary: result.summary,
-      outline: result.outline
+      outline: result.outline,
+      actionItems: result.actionItems
     });
   } catch (error) {
     if (error instanceof ProviderError) {

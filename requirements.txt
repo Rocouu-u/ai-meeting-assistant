@@ -1,0 +1,38 @@
+# AI 会议助手 — Python 依赖（核心包）
+# 用法：pip install -r requirements.txt
+#
+# 注意：
+#   - torch 安装取决于你的平台，请按下方说明选择。
+#   - 如需精确复现当前环境，使用 requirements-full.txt（pip freeze 输出）。
+
+# ── 平台选择（三选一，注释掉不用的）──────────────────────────────────────────
+
+# Mac Apple Silicon (M1/M2/M3) — CPU / MPS
+torch>=2.0
+torchaudio>=2.0
+
+# Windows/Linux + NVIDIA GPU（取消注释并注释掉上方两行）
+# pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Windows/Linux CPU only（取消注释并注释掉上方两行）
+# pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# ── 核心 ML 包 ────────────────────────────────────────────────────────────────
+
+funasr>=1.0
+modelscope>=1.9
+transformers>=4.35
+sentencepiece>=0.1.99
+accelerate>=0.26        # LLM 本地推理必需
+
+# ── 音频处理 ──────────────────────────────────────────────────────────────────
+
+soundfile>=0.12
+librosa>=0.10
+
+# ── 其他工具 ──────────────────────────────────────────────────────────────────
+
+onnxruntime>=1.16       # CPU 推理加速（GPU 机器用 onnxruntime-gpu）
+huggingface_hub>=0.19
+datasets>=2.14
+einops>=0.7

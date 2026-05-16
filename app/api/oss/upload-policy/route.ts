@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       enabled: false,
-      message: "OSS 直传未开启，继续使用阿里云百炼临时上传。"
+      message: "OSS 直传未开启，当前使用本地识别方案。"
     });
   }
 

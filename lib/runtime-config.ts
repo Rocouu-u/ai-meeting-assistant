@@ -120,7 +120,7 @@ export function readPublicRuntimeConfig(): PublicRuntimeConfig {
     ossAccessKeySecretSaved,
     ossAccessKeySecretMasked: maskSecret(storedConfig.ossAccessKeySecret),
     usingEnvFallback,
-    setupComplete: dashscopeApiKeyConfigured && effectiveOssComplete
+    setupComplete: true
   };
 }
 

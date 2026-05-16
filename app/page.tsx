@@ -25,6 +25,7 @@ type MeetingRecord = {
   transcript: string;
   summary: string;
   outline: string;
+  actionItems: ActionItem[];
   audioFileName?: string;
   audioFileSize?: string;
   audioFileType?: string;
@@ -35,6 +36,24 @@ type MeetingRecord = {
   uploadNotice?: string;
   transcribeElapsedText?: string;
   errorMessage?: string;
+  transcriptSegments?: TranscriptSegment[];
+};
+
+type ActionItem = {
+  topic: string;
+  owner: string;
+  expectedResult: string;
+  deadline: string;
+  sourceTimestamp: string;
+};
+
+type TranscriptSegment = {
+  text: string;
+  speakerId?: string | null;
+  speakerName?: string | null;
+  beginTime?: number | null;
+  endTime?: number | null;
+  timestamp?: string;
 };
 
 type QueueItem = {
@@ -50,6 +69,7 @@ type TranscribeResponse = {
   transcriptId?: string;
   transcript?: string;
   elapsedMs?: number;
+  segments?: TranscriptSegment[];
 };
 
 type OssUploadPolicyResponse = {
@@ -66,6 +86,7 @@ type GenerateReportResponse = {
   message?: string;
   summary?: string;
   outline?: string;
+  actionItems?: ActionItem[];
 };
 
 type AppConfigResponse = {
@@ -127,15 +148,6 @@ type SettingsResponse = {
   config?: PublicRuntimeConfig;
 };
 
-type SettingsForm = {
-  dashscopeApiKey: string;
-  ossEnabled: boolean;
-  ossRegion: string;
-  ossBucket: string;
-  ossAccessKeyId: string;
-  ossAccessKeySecret: string;
-};
-
 type ConfigDisplayStatus = "未配置" | "已配置" | "测试通过" | "测试失败";
 
 type SaveFilePickerWindow = Window & {
@@ -184,7 +196,8 @@ const emptyRecord: MeetingRecord = {
   taskStatus: "idle",
   transcript: "",
   summary: "",
-  outline: ""
+  outline: "",
+  actionItems: []
 };
 
 export default function Home() {
@@ -194,23 +207,12 @@ export default function Home() {
   const [generateStatus, setGenerateStatus] = useState("");
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<PublicRuntimeConfig | null>(null);
-  const [settingsForm, setSettingsForm] = useState<SettingsForm>({
-    dashscopeApiKey: "",
-    ossEnabled: true,
-    ossRegion: defaultOssRegion,
-    ossBucket: "",
-    ossAccessKeyId: "",
-    ossAccessKeySecret: ""
-  });
   const [settingsStatus, setSettingsStatus] = useState("");
-  const [dashscopeStatus, setDashscopeStatus] = useState<ConfigDisplayStatus>("未配置");
-  const [ossStatus, setOssStatus] = useState<ConfigDisplayStatus>("未配置");
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [isTestingDashScope, setIsTestingDashScope] = useState(false);
-  const [isTestingOss, setIsTestingOss] = useState(false);
   const [currentOrigin, setCurrentOrigin] = useState("");
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [recordRetentionDays, setRecordRetentionDays] = useState(defaultRecordRetentionDays);
@@ -220,6 +222,11 @@ export default function Home() {
   const uploadXhrRefs = useRef(new Map<string, XMLHttpRequest>());
   const abortReasonsRef = useRef(new Map<string, "user" | "stall">());
   const recordsRef = useRef<MeetingRecord[]>([]);
+  const [audioObjectUrls, setAudioObjectUrls] = useState<Record<string, string>>({});
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
 
   const activeRecord = useMemo(
     () => records.find((record) => record.id === activeId) ?? emptyRecord,
@@ -230,6 +237,7 @@ export default function Home() {
   const hasUsableTranscript =
     Boolean(activeRecord.transcript.trim()) &&
     !["uploading", "transcribing", "still_processing", "failed", "queued", "idle"].includes(activeRecord.taskStatus);
+  const currentAudioUrl = audioObjectUrls[activeRecord.id] ?? null;
 
   useEffect(() => {
     setCurrentOrigin(window.location.origin);
@@ -262,31 +270,24 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    setIsAudioPlaying(false);
+    setAudioCurrentTime(0);
+    setAudioDuration(0);
+  }, [activeRecord.id]);
+
   const loadSettings = async () => {
     try {
       const response = await fetch("/api/settings");
       const result = (await response.json()) as SettingsResponse;
 
       if (!response.ok || !result.ok || !result.config) {
-        setShowSettings(true);
         return;
       }
 
       setSettings(result.config);
-      setDashscopeStatus(result.config.dashscopeApiKeyConfigured ? "已配置" : "未配置");
-      setOssStatus(result.config.ossConfigured ? "已配置" : "未配置");
-      setSettingsForm((currentForm) => ({
-        ...currentForm,
-        ossEnabled: result.config?.ossEnabled ?? true,
-        ossRegion: result.config?.ossRegion || defaultOssRegion,
-        ossBucket: result.config?.ossBucket || ""
-      }));
-
-      if (!result.config.setupComplete) {
-        setShowSettings(true);
-      }
     } catch {
-      setShowSettings(true);
+      setSettings(null);
     }
   };
 
@@ -361,130 +362,6 @@ export default function Home() {
   const showNotice = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2200);
-  };
-
-  const updateSettingsForm = (patch: Partial<SettingsForm>) => {
-    setSettingsForm((currentForm) => ({
-      ...currentForm,
-      ...patch
-    }));
-  };
-
-  const handleSaveSettings = async () => {
-    const missingFields = getMissingSettingsFields(settingsForm, settings);
-
-    if (missingFields.length > 0) {
-      setSettingsStatus(`缺少必填项：${missingFields.join("、")}`);
-      return;
-    }
-
-    setIsSavingSettings(true);
-    setSettingsStatus("");
-
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(settingsForm)
-      });
-      const result = (await response.json()) as SettingsResponse;
-
-      if (!response.ok || !result.ok || !result.config) {
-        setSettingsStatus(result.message || "配置保存失败，请检查填写内容。");
-        return;
-      }
-
-      setSettings(result.config);
-      setDashscopeStatus(result.config.dashscopeApiKeyConfigured ? "已配置" : "未配置");
-      setOssStatus(result.config.ossConfigured ? "已配置" : "未配置");
-      setSettingsForm((currentForm) => ({
-        ...currentForm,
-        dashscopeApiKey: "",
-        ossAccessKeyId: "",
-        ossAccessKeySecret: "",
-        ossEnabled: result.config?.ossEnabled ?? true,
-        ossRegion: result.config?.ossRegion || defaultOssRegion,
-        ossBucket: result.config?.ossBucket || ""
-      }));
-      setSettingsStatus("配置已保存。");
-
-      if (result.config.setupComplete) {
-        setShowSettings(false);
-      }
-    } catch {
-      setSettingsStatus("配置保存失败，请检查本地服务。");
-    } finally {
-      setIsSavingSettings(false);
-    }
-  };
-
-  const handleTestDashScope = async () => {
-    setIsTestingDashScope(true);
-    setSettingsStatus("正在测试百炼 API...");
-
-    try {
-      const response = await fetch("/api/settings/test-dashscope", {
-        method: "POST"
-      });
-      const result = (await response.json()) as SettingsResponse;
-      setDashscopeStatus(response.ok && result.ok ? "测试通过" : "测试失败");
-      setSettingsStatus(result.message || (response.ok ? "百炼 API 连接成功。" : "百炼 API 连接失败。"));
-    } catch {
-      setDashscopeStatus("测试失败");
-      setSettingsStatus("百炼 API 连接失败，请检查网络。");
-    } finally {
-      setIsTestingDashScope(false);
-    }
-  };
-
-  const handleTestOss = async () => {
-    setIsTestingOss(true);
-    setSettingsStatus("正在测试 OSS 上传...");
-
-    try {
-      const policyResponse = await fetch("/api/settings/test-oss-policy", {
-        method: "POST"
-      });
-      const policy = (await policyResponse.json()) as OssUploadPolicyResponse;
-
-      if (!policyResponse.ok || !policy.ok || !policy.uploadUrl || !policy.fields) {
-        setOssStatus("测试失败");
-        setSettingsStatus(policy.message || "OSS 配置不完整，请先保存配置。");
-        return;
-      }
-
-      const formData = new FormData();
-      Object.entries(policy.fields).forEach(([key, value]) => {
-        formData.append(key, value);
-      });
-      formData.append("file", new Blob(["meeting-ai-config-test"], { type: "text/plain" }), "meeting-ai-config-test.txt");
-
-      const uploadResponse = await fetch(policy.uploadUrl, {
-        method: "POST",
-        body: formData
-      });
-      const responseText = await uploadResponse.text();
-
-      if (uploadResponse.ok) {
-        setOssStatus("测试通过");
-        setSettingsStatus("OSS 上传测试成功。");
-        return;
-      }
-
-      const ossCode = getOssErrorCode(responseText);
-      const causeText = ossCode ? `错误码：${ossCode}。` : "";
-      setOssStatus("测试失败");
-      setSettingsStatus(
-        `${causeText}OSS 上传测试失败。可能原因：Bucket 名称错误、Region 选错、AccessKey 无权限、OSS 欠费或 UserDisable、CORS 未配置。`
-      );
-    } catch {
-      setOssStatus("测试失败");
-      setSettingsStatus("OSS 上传测试失败。可能原因：网络异常、CORS 未配置，或 OSS 配置不正确。");
-    } finally {
-      setIsTestingOss(false);
-    }
   };
 
   const updateRecordById = (recordId: string, patch: Partial<MeetingRecord>, options: { persist?: boolean } = {}) => {
@@ -562,6 +439,10 @@ export default function Home() {
     }
 
     abortUpload(recordId);
+    if (audioObjectUrls[recordId]) {
+      URL.revokeObjectURL(audioObjectUrls[recordId]);
+      setAudioObjectUrls((prev) => { const next = { ...prev }; delete next[recordId]; return next; });
+    }
     const nextRecords = recordsRef.current.filter((item) => item.id !== recordId);
     recordsRef.current = nextRecords;
     setRecords(nextRecords);
@@ -587,6 +468,14 @@ export default function Home() {
     }
 
     selectedRecordIds.forEach(abortUpload);
+    selectedRecordIds.forEach((id) => {
+      if (audioObjectUrls[id]) URL.revokeObjectURL(audioObjectUrls[id]);
+    });
+    setAudioObjectUrls((prev) => {
+      const next = { ...prev };
+      selectedRecordIds.forEach((id) => delete next[id]);
+      return next;
+    });
     const nextRecords = recordsRef.current.filter((record) => !selectedRecordIds.includes(record.id));
     recordsRef.current = nextRecords;
     setRecords(nextRecords);
@@ -645,9 +534,12 @@ export default function Home() {
     }
 
     const now = Date.now();
+    const newAudioUrls: Record<string, string> = {};
     const newRecords = validFiles.map((file, index) => {
       const recordId = `meeting-${now}-${index}`;
       const title = file.name.replace(/\.[^/.]+$/, "") || "新的会议录音";
+
+      newAudioUrls[recordId] = URL.createObjectURL(file);
 
       uploadQueueRef.current.push({
         recordId,
@@ -672,10 +564,10 @@ export default function Home() {
     recordsRef.current = nextRecords;
     setRecords(nextRecords);
     setActiveId(newRecords[0].id);
+    setAudioObjectUrls((prev) => ({ ...prev, ...newAudioUrls }));
     showNotice(`已创建 ${newRecords.length} 条转写任务`);
-    void Promise.all(newRecords.map(createHistoryRecord)).finally(() => {
-      processUploadQueue();
-    });
+    processUploadQueue();
+    void Promise.allSettled(newRecords.map(createHistoryRecord));
   };
 
   const processUploadQueue = () => {
@@ -701,7 +593,8 @@ export default function Home() {
       uploadProgress: 0,
       uploadNotice: "正在上传音频，请稍候。",
       transcript: "音频上传中，请稍候。\n\n长音频处理时间会受网络和录音质量影响，请保持页面打开直到任务提交成功。",
-      errorMessage: ""
+      errorMessage: "",
+      transcriptSegments: []
     });
 
     try {
@@ -721,13 +614,13 @@ export default function Home() {
         uploadNotice: "任务已提交，正在转写音频。"
       });
 
-      const transcript = await pollTranscriptionResult(result.transcriptId, recordId);
+      const transcriptionResult = await pollTranscriptionResult(result.transcriptId, recordId);
 
-      if (!transcript) {
+      if (!transcriptionResult) {
         return;
       }
 
-      await generateReportForRecord(recordId, transcript);
+      await generateReportForRecord(recordId, transcriptionResult.transcript);
     } catch (error) {
       const message =
         error instanceof Error && error.message
@@ -1024,11 +917,16 @@ export default function Home() {
           status: "生成纪要中",
           taskStatus: "summarizing",
           transcript: result.transcript,
+          transcriptSegments: result.segments ?? [],
           transcribeElapsedText: elapsedText,
           summary: "正在生成会议纪要...",
-          outline: "正在生成会议大纲..."
+          outline: "正在生成会议大纲...",
+          actionItems: []
         });
-        return result.transcript;
+        return {
+          transcript: result.transcript,
+          segments: result.segments ?? []
+        };
       }
 
       const isLongProcessing = elapsedMs >= longAudioNoticeAfterMs;
@@ -1058,7 +956,8 @@ export default function Home() {
       status: "生成纪要中",
       taskStatus: "summarizing",
       summary: "正在生成会议纪要...",
-      outline: "正在生成会议大纲..."
+      outline: "正在生成会议大纲...",
+      actionItems: []
     });
 
     try {
@@ -1080,7 +979,8 @@ export default function Home() {
         status: "已完成",
         taskStatus: "completed",
         summary: result.summary || "未生成会议纪要。",
-        outline: result.outline || "未生成会议大纲。"
+        outline: result.outline || "未生成会议大纲。",
+        actionItems: normalizeActionItems(result.actionItems)
       });
       showNotice("会议纪要和会议大纲已生成");
     } catch {
@@ -1107,7 +1007,8 @@ export default function Home() {
       taskStatus: "failed",
       errorMessage: message,
       uploadNotice: message,
-      transcript: `${message}\n\n可以重新选择这段录音后再试一次。`
+      transcript: `${message}\n\n可以重新选择这段录音后再试一次。`,
+      transcriptSegments: []
     });
   };
 
@@ -1122,6 +1023,13 @@ export default function Home() {
     xhr.abort();
   };
 
+  const jumpToTimestamp = (seconds: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = seconds;
+      void audioRef.current.play();
+    }
+  };
+
   const handleExportWord = async () => {
     if (!canExportRecord(activeRecord)) {
       showNotice("当前记录暂无可导出的内容");
@@ -1131,7 +1039,8 @@ export default function Home() {
     setIsExportingWord(true);
 
     try {
-      const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import("docx");
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType } =
+        await import("docx");
       const doc = new Document({
         sections: [
           {
@@ -1142,7 +1051,16 @@ export default function Home() {
                 children: [new TextRun(activeRecord.title)]
               }),
               ...createWordSection("会议纪要", activeRecord.summary, { Paragraph, TextRun, HeadingLevel }),
-              ...createWordSection("会议大纲", activeRecord.outline, { Paragraph, TextRun, HeadingLevel })
+              ...createWordSection("会议大纲", activeRecord.outline, { Paragraph, TextRun, HeadingLevel }),
+              ...createWordActionItemsTable(activeRecord.actionItems, {
+                Paragraph,
+                TextRun,
+                HeadingLevel,
+                Table,
+                TableRow,
+                TableCell,
+                WidthType
+              })
             ]
           }
         ]
@@ -1211,6 +1129,58 @@ export default function Home() {
       showNotice(isSaveCancelled(error) ? "已取消导出" : "PDF 导出失败，请稍后重试");
     } finally {
       setIsExportingPdf(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (activeRecord.actionItems.length === 0) {
+      showNotice("当前记录暂无行动项可导出");
+      return;
+    }
+
+    setIsExportingCsv(true);
+
+    try {
+      const blob = new Blob([`\uFEFF${buildActionItemsCsv(activeRecord.actionItems)}`], {
+        type: "text/csv;charset=utf-8"
+      });
+
+      await saveBlobWithPicker(
+        blob,
+        `${sanitizeDownloadFileName(activeRecord.title)}-行动项矩阵.csv`,
+        "text/csv"
+      );
+      showNotice("CSV 已导出");
+    } catch (error) {
+      showNotice(isSaveCancelled(error) ? "已取消导出" : "CSV 导出失败，请稍后重试");
+    } finally {
+      setIsExportingCsv(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (activeRecord.actionItems.length === 0) {
+      showNotice("当前记录暂无行动项可导出");
+      return;
+    }
+
+    setIsExportingExcel(true);
+
+    try {
+      const blob = new Blob([buildActionItemsExcelHtml(activeRecord)], {
+        type: "application/vnd.ms-excel;charset=utf-8"
+      });
+
+      await saveBlobWithPicker(
+        blob,
+        `${sanitizeDownloadFileName(activeRecord.title)}-行动项矩阵.xls`,
+        "application/vnd.ms-excel"
+      );
+      showNotice("Excel 已导出");
+    } catch (error) {
+      showNotice(isSaveCancelled(error) ? "已取消导出" : "Excel 导出失败，请稍后重试");
+    } finally {
+      setIsExportingExcel(false);
     }
   };
 
@@ -1354,25 +1324,10 @@ export default function Home() {
             {showSettings ? (
               <SettingsPanel
                 currentOrigin={currentOrigin}
-                form={settingsForm}
                 settings={settings}
                 settingsStatus={settingsStatus}
-                dashscopeStatus={dashscopeStatus}
-                ossStatus={ossStatus}
-                isSavingSettings={isSavingSettings}
-                isTestingDashScope={isTestingDashScope}
-                isTestingOss={isTestingOss}
-                onChange={updateSettingsForm}
-                onSave={handleSaveSettings}
-                onTestDashScope={handleTestDashScope}
-                onTestOss={handleTestOss}
                 onClose={() => {
-                  if (settings?.setupComplete) {
-                    setShowSettings(false);
-                    return;
-                  }
-
-                  setSettingsStatus("请先完成系统配置并保存。");
+                  setShowSettings(false);
                 }}
               />
             ) : (
@@ -1403,11 +1358,16 @@ export default function Home() {
                 <button
                   className={`${buttonBase} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
                   type="button"
-                  disabled={!activeRecord.transcript.trim() && !activeRecord.summary.trim() && !activeRecord.outline.trim()}
+                  disabled={
+                    !activeRecord.transcript.trim() &&
+                    !activeRecord.summary.trim() &&
+                    !activeRecord.outline.trim() &&
+                    activeRecord.actionItems.length === 0
+                  }
                   onClick={() =>
                     copyText(
                       "全部内容",
-                      `# 转写文本\n${activeRecord.transcript}\n\n# 会议纪要\n${activeRecord.summary}\n\n# 会议大纲\n${activeRecord.outline}`
+                      `# 转写文本\n${activeRecord.transcript}\n\n# 会议纪要\n${activeRecord.summary}\n\n# 会议大纲\n${activeRecord.outline}\n\n# 行动项矩阵\n${formatActionItemsForCopy(activeRecord.actionItems)}`
                     )
                   }
                 >
@@ -1428,6 +1388,15 @@ export default function Home() {
               </div>
             ) : null}
 
+            <WorkflowProgress
+              taskStatus={activeRecord.taskStatus}
+              hasRecord={activeRecord.id !== emptyRecord.id}
+              isSummarizingFailed={
+                activeRecord.taskStatus === "failed" &&
+                (activeRecord.summary === "正在生成会议纪要..." || Boolean(activeRecord.transcriptId))
+              }
+            />
+
             <section
               className={`mb-5 rounded-xl border border-dashed bg-white px-5 py-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition ${
                 isDraggingAudio ? "border-slate-950 ring-2 ring-slate-200" : "border-slate-300"
@@ -1440,7 +1409,7 @@ export default function Home() {
                 <div>
                   <h3 className="text-base font-semibold tracking-normal text-slate-950">上传会议录音</h3>
                   <p className="mt-1 text-sm leading-6 text-slate-500">
-                    支持格式：mp3、wav、m4a、mp4。长音频处理时间会受网络和录音质量影响。
+                    支持格式：mp3、wav、m4a、mp4。本地处理，音频不上传云端。
                   </p>
                 </div>
                 <label className={`${buttonBase} cursor-pointer border-slate-950 bg-slate-950 text-white hover:bg-slate-800`}>
@@ -1457,45 +1426,64 @@ export default function Home() {
               {activeRecord.id !== emptyRecord.id ? <TaskInfoPanel record={activeRecord} /> : null}
             </section>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(380px,5fr)]">
-              <div>
-                <EditablePanel
-                  label="转写文本"
-                  helper="会议录音转成文字后会显示在这里，可直接修正错字和表达。"
-                  minHeight="min-h-[590px]"
-                  value={activeRecord.transcript}
-                  placeholder="等待上传录音后生成转写文本"
-                  copyLabel="复制"
-                  onCopy={() => copyText("转写文本", activeRecord.transcript)}
-                  onChange={(value) => updateRecord("transcript", value)}
-                />
-              </div>
+            <div className="space-y-5">
+              <EditablePanel
+                label="转写文本"
+                helper=""
+                minHeight="min-h-[360px]"
+                value={activeRecord.transcript}
+                placeholder="等待上传录音后生成转写文本"
+                copyLabel="复制"
+                onCopy={() => copyText("转写文本", activeRecord.transcript)}
+                onChange={(value) => updateRecord("transcript", value)}
+              />
 
-              <div className="space-y-5">
-                <EditablePanel
-                  label="会议纪要"
-                  helper="根据转写内容整理出的结构化纪要，可继续编辑。"
-                  minHeight="min-h-[300px]"
-                  value={activeRecord.summary}
-                  placeholder="等待生成会议纪要"
-                  copyLabel="复制"
-                  onCopy={() => copyText("会议纪要", activeRecord.summary)}
-                  onChange={(value) => updateRecord("summary", value)}
-                />
+              <EditablePanel
+                label="会议纪要"
+                helper="根据转写内容整理出的结构化会议摘要，可继续编辑。"
+                minHeight="min-h-[320px]"
+                value={activeRecord.summary}
+                placeholder="等待生成会议纪要"
+                copyLabel="复制"
+                onCopy={() => copyText("会议纪要", activeRecord.summary)}
+                onChange={(value) => updateRecord("summary", value)}
+              />
 
-                <EditablePanel
-                  label="会议大纲"
-                  helper="用于后续汇报或整理材料的正式大纲，可按需要调整。"
-                  minHeight="min-h-[300px]"
-                  value={activeRecord.outline}
-                  placeholder="等待生成会议大纲"
-                  copyLabel="复制"
-                  onCopy={() => copyText("会议大纲", activeRecord.outline)}
-                  onChange={(value) => updateRecord("outline", value)}
-                />
-              </div>
+              <ActionItemsPanel
+                items={activeRecord.actionItems}
+                isLoading={activeRecord.taskStatus === "summarizing"}
+                onCopy={() => copyText("行动项矩阵", formatActionItemsForCopy(activeRecord.actionItems))}
+                onTimestampClick={currentAudioUrl ? jumpToTimestamp : undefined}
+              />
+
+              <EditablePanel
+                label="会议大纲"
+                helper="用于培训展示或汇报材料的会议大纲，可继续编辑。"
+                minHeight="min-h-[320px]"
+                value={activeRecord.outline}
+                placeholder="等待生成会议大纲"
+                copyLabel="复制"
+                onCopy={() => copyText("会议大纲", activeRecord.outline)}
+                onChange={(value) => updateRecord("outline", value)}
+              />
             </div>
-            <footer className="mt-5 flex justify-end gap-2 border-t border-slate-200 pt-5">
+            <footer className="mt-5 flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-5">
+              <button
+                className={`${buttonBase} border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50`}
+                type="button"
+                disabled={isExportingCsv || activeRecord.actionItems.length === 0}
+                onClick={handleExportCsv}
+              >
+                {isExportingCsv ? "导出中..." : "导出 CSV"}
+              </button>
+              <button
+                className={`${buttonBase} border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50`}
+                type="button"
+                disabled={isExportingExcel || activeRecord.actionItems.length === 0}
+                onClick={handleExportExcel}
+              >
+                {isExportingExcel ? "导出中..." : "导出 Excel"}
+              </button>
               <button
                 className={`${buttonBase} border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50`}
                 type="button"
@@ -1518,6 +1506,50 @@ export default function Home() {
           </div>
         </section>
       </div>
+      {currentAudioUrl ? (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <audio
+          ref={audioRef}
+          src={currentAudioUrl}
+          onPlay={() => setIsAudioPlaying(true)}
+          onPause={() => setIsAudioPlaying(false)}
+          onEnded={() => setIsAudioPlaying(false)}
+          onTimeUpdate={() => {
+            if (audioRef.current) setAudioCurrentTime(audioRef.current.currentTime);
+          }}
+          onLoadedMetadata={() => {
+            if (audioRef.current) setAudioDuration(audioRef.current.duration);
+          }}
+          style={{ display: "none" }}
+        />
+      ) : null}
+
+      {currentAudioUrl && (isAudioPlaying || audioCurrentTime > 0) ? (
+        <FloatingAudioPlayer
+          isPlaying={isAudioPlaying}
+          currentTime={audioCurrentTime}
+          duration={audioDuration}
+          onPlayPause={() => {
+            if (!audioRef.current) return;
+            if (isAudioPlaying) {
+              audioRef.current.pause();
+            } else {
+              void audioRef.current.play();
+            }
+          }}
+          onSeek={(seconds) => {
+            if (audioRef.current) audioRef.current.currentTime = seconds;
+          }}
+          onClose={() => {
+            if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current.currentTime = 0;
+            }
+            setIsAudioPlaying(false);
+            setAudioCurrentTime(0);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
@@ -1537,44 +1569,26 @@ function createRecordFromFile(recordId: string, title: string, file: File): Meet
     transcript: "任务已创建，等待上传。\n\n系统会自动完成上传、转写、会议纪要和会议大纲生成。",
     summary: "等待生成会议纪要",
     outline: "等待生成会议大纲",
+    actionItems: [],
     audioFileName: file.name,
     audioFileSize: formatFileSize(file.size),
     audioFileType: file.type || getFileTypeFromName(file.name),
     audioFileSizeBytes: file.size,
     uploadProgress: 0,
-    uploadNotice: "等待上传"
+    uploadNotice: "等待上传",
+    transcriptSegments: []
   };
 }
 
 function SettingsPanel({
   currentOrigin,
-  form,
   settings,
   settingsStatus,
-  dashscopeStatus,
-  ossStatus,
-  isSavingSettings,
-  isTestingDashScope,
-  isTestingOss,
-  onChange,
-  onSave,
-  onTestDashScope,
-  onTestOss,
   onClose
 }: {
   currentOrigin: string;
-  form: SettingsForm;
   settings: PublicRuntimeConfig | null;
   settingsStatus: string;
-  dashscopeStatus: ConfigDisplayStatus;
-  ossStatus: ConfigDisplayStatus;
-  isSavingSettings: boolean;
-  isTestingDashScope: boolean;
-  isTestingOss: boolean;
-  onChange: (patch: Partial<SettingsForm>) => void;
-  onSave: () => void;
-  onTestDashScope: () => void;
-  onTestOss: () => void;
   onClose: () => void;
 }) {
   return (
@@ -1582,9 +1596,9 @@ function SettingsPanel({
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500">初始化设置</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">系统配置</h2>
+          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">本地状态</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            请填写客户自己的阿里云百炼 API Key 和 OSS 配置。配置会保存到本机后端，不会放在浏览器缓存里。
+            现在默认使用本地转写和本地摘要，不需要填写云端 Key。
           </p>
         </div>
         <button
@@ -1598,103 +1612,20 @@ function SettingsPanel({
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-          <h3 className="text-base font-semibold text-slate-950">百炼 / DashScope</h3>
-          <p className="mt-2 text-sm text-slate-600">
-            当前状态：{dashscopeStatus}
-          </p>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            DASHSCOPE_API_KEY
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-              type="password"
-              value={form.dashscopeApiKey}
-              placeholder={settings?.dashscopeApiKeySaved ? "已配置，留空则保留" : "请输入百炼 API Key"}
-              onChange={(event) => onChange({ dashscopeApiKey: event.target.value })}
-            />
-          </label>
-          <button
-            className={`${buttonBase} mt-4 border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
-            type="button"
-            disabled={isTestingDashScope}
-            onClick={onTestDashScope}
-          >
-            {isTestingDashScope ? "测试中..." : "测试百炼 API"}
-          </button>
+          <h3 className="text-base font-semibold text-slate-950">本地识别</h3>
+          <p className="mt-2 text-sm text-slate-600">默认启用。页面会调用本机 Python 环境里的开源模型完成转写。</p>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-          <h3 className="text-base font-semibold text-slate-950">OSS 前端直传</h3>
-          <p className="mt-2 text-sm text-slate-600">当前状态：{ossStatus}</p>
-          <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.ossEnabled}
-              onChange={(event) => onChange({ ossEnabled: event.target.checked })}
-            />
-            启用 OSS 上传
-          </label>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            OSS_REGION
-            <select
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-              value={form.ossRegion}
-              onChange={(event) => onChange({ ossRegion: event.target.value })}
-            >
-              {ossRegionOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            OSS_BUCKET
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-              type="text"
-              value={form.ossBucket}
-              placeholder="请输入您的 OSS Bucket 名称"
-              onChange={(event) => onChange({ ossBucket: event.target.value })}
-            />
-          </label>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            OSS_ACCESS_KEY_ID
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-              type="password"
-              value={form.ossAccessKeyId}
-              placeholder={settings?.ossAccessKeyIdSaved ? "已配置，留空则保留" : "请输入 OSS AccessKey ID"}
-              onChange={(event) => onChange({ ossAccessKeyId: event.target.value })}
-            />
-          </label>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            OSS_ACCESS_KEY_SECRET
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-              type="password"
-              value={form.ossAccessKeySecret}
-              placeholder={settings?.ossAccessKeySecretSaved ? "已配置，留空则保留" : "请输入 OSS AccessKey Secret"}
-              onChange={(event) => onChange({ ossAccessKeySecret: event.target.value })}
-            />
-          </label>
-          <button
-            className={`${buttonBase} mt-4 border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
-            type="button"
-            disabled={isTestingOss}
-            onClick={onTestOss}
-          >
-            {isTestingOss ? "测试中..." : "测试 OSS 上传"}
-          </button>
+          <h3 className="text-base font-semibold text-slate-950">本地摘要</h3>
+          <p className="mt-2 text-sm text-slate-600">默认启用。会议纪要和大纲由本机大模型生成，不需要云端 API。</p>
         </section>
       </div>
 
       <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-        <p className="font-medium text-slate-950">OSS CORS 提示</p>
-        <p className="mt-1">如使用 OSS 前端直传，请在阿里云 OSS 控制台配置 CORS。</p>
-        <p className="mt-1">
-          请在 OSS 控制台的 CORS Origin 中添加以下地址：
-          <span className="ml-1 font-medium text-slate-950">{currentOrigin || "当前访问地址"}</span>
-        </p>
+        <p className="font-medium text-slate-950">运行提示</p>
+        <p className="mt-1">如果本机没有装好 Python 或模型依赖，转写和摘要会提示环境未就绪。</p>
+        <p className="mt-1">当前访问地址：<span className="font-medium text-slate-950">{currentOrigin || "当前访问地址"}</span></p>
       </div>
 
       {settingsStatus ? (
@@ -1707,10 +1638,9 @@ function SettingsPanel({
         <button
           className={`${buttonBase} border-slate-950 bg-slate-950 text-white hover:bg-slate-800`}
           type="button"
-          disabled={isSavingSettings}
-          onClick={onSave}
+          onClick={onClose}
         >
-          {isSavingSettings ? "保存中..." : "保存配置"}
+          返回主界面
         </button>
       </div>
     </section>
@@ -1742,19 +1672,9 @@ function TaskInfoPanel({ record }: { record: MeetingRecord }) {
         <dt className="text-xs text-slate-500">创建时间</dt>
         <dd className="mt-1 font-medium text-slate-800">{formatDateTime(record.createdAt)}</dd>
       </div>
-      {["uploading", "queued", "failed"].includes(record.taskStatus) || typeof record.uploadProgress === "number" ? (
+      {record.uploadNotice && ["transcribing", "still_processing", "summarizing"].includes(record.taskStatus) ? (
         <div className="sm:col-span-2">
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-xs text-slate-500">上传进度</dt>
-            <dd className="text-xs font-medium text-slate-700">{record.uploadProgress ?? 0}%</dd>
-          </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-            <div
-              className="h-full rounded-full bg-slate-950 transition-all"
-              style={{ width: `${record.uploadProgress ?? 0}%` }}
-            />
-          </div>
-          {record.uploadNotice ? <p className="mt-2 text-xs leading-5 text-slate-600">{record.uploadNotice}</p> : null}
+          <p className="text-xs leading-5 text-slate-600">{record.uploadNotice}</p>
         </div>
       ) : null}
       {record.errorMessage ? (
@@ -1798,6 +1718,15 @@ type WordExportTools = {
   };
 };
 
+type WordActionItemsTableTools = WordExportTools & {
+  Table: new (options?: any) => any;
+  TableRow: new (options?: any) => any;
+  TableCell: new (options?: any) => any;
+  WidthType: {
+    PERCENTAGE: string;
+  };
+};
+
 function createWordSection(title: string, content: string, tools: WordExportTools) {
   const { Paragraph, TextRun, HeadingLevel } = tools;
   const text = content.trim() || "暂无内容";
@@ -1813,6 +1742,59 @@ function createWordSection(title: string, content: string, tools: WordExportTool
           children: [new TextRun(line || " ")]
         })
     )
+  ];
+}
+
+function createWordActionItemsTable(items: ActionItem[], tools: WordActionItemsTableTools) {
+  const { Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType } = tools;
+  const headers = ["议题", "责任人", "预期结果", "截止时间", "溯源时间戳"];
+
+  if (items.length === 0) {
+    return createWordSection("行动项矩阵", "暂无内容", { Paragraph, TextRun, HeadingLevel });
+  }
+
+  const createCell = (text: string, isHeader = false) =>
+    new TableCell({
+      children: [
+        new Paragraph({
+          children: [
+            new TextRun({
+              text,
+              bold: isHeader
+            })
+          ]
+        })
+      ]
+    });
+
+  return [
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      children: [new TextRun("行动项矩阵")]
+    }),
+    new Table({
+      width: {
+        size: 100,
+        type: WidthType.PERCENTAGE
+      },
+      rows: [
+        new TableRow({
+          children: headers.map((header) => createCell(header, true))
+        }),
+        ...items.map(
+          (item) =>
+            new TableRow({
+              children: [
+                createCell(item.topic),
+                createCell(item.owner),
+                createCell(item.expectedResult),
+                createCell(item.deadline),
+                createCell(item.sourceTimestamp)
+              ]
+            })
+        )
+      ]
+    })
   ];
 }
 
@@ -1840,6 +1822,7 @@ function createPdfExportNode(record: MeetingRecord) {
 
   appendPdfSection(container, "会议纪要", record.summary);
   appendPdfSection(container, "会议大纲", record.outline);
+  appendPdfActionItemsTable(container, record.actionItems);
 
   return container;
 }
@@ -1859,8 +1842,67 @@ function appendPdfSection(container: HTMLDivElement, title: string, content: str
   container.appendChild(body);
 }
 
+function appendPdfActionItemsTable(container: HTMLDivElement, items: ActionItem[]) {
+  const sectionTitle = document.createElement("h2");
+  sectionTitle.textContent = "行动项矩阵";
+  sectionTitle.style.fontSize = "20px";
+  sectionTitle.style.margin = "24px 0 8px";
+  sectionTitle.style.lineHeight = "1.4";
+  container.appendChild(sectionTitle);
+
+  if (items.length === 0) {
+    const emptyText = document.createElement("div");
+    emptyText.textContent = "暂无内容";
+    container.appendChild(emptyText);
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.style.width = "100%";
+  table.style.borderCollapse = "collapse";
+  table.style.fontSize = "13px";
+  table.style.lineHeight = "1.55";
+  table.style.tableLayout = "fixed";
+
+  const headers = ["议题", "责任人", "预期结果", "截止时间", "溯源时间戳"];
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+
+  headers.forEach((header) => {
+    const cell = document.createElement("th");
+    cell.textContent = header;
+    cell.style.border = "1px solid #d9dee8";
+    cell.style.background = "#f3f5f8";
+    cell.style.padding = "8px";
+    cell.style.textAlign = "left";
+    cell.style.verticalAlign = "top";
+    headerRow.appendChild(cell);
+  });
+
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  items.forEach((item) => {
+    const row = document.createElement("tr");
+    [item.topic, item.owner, item.expectedResult, item.deadline, item.sourceTimestamp].forEach((value) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      cell.style.border = "1px solid #d9dee8";
+      cell.style.padding = "8px";
+      cell.style.verticalAlign = "top";
+      cell.style.wordBreak = "break-word";
+      row.appendChild(cell);
+    });
+    tbody.appendChild(row);
+  });
+
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
 function canExportRecord(record: MeetingRecord) {
-  return Boolean(record.title.trim() && (record.summary.trim() || record.outline.trim()));
+  return Boolean(record.title.trim() && (record.summary.trim() || record.outline.trim() || record.actionItems.length > 0));
 }
 
 function sanitizeDownloadFileName(fileName: string) {
@@ -1886,12 +1928,12 @@ async function saveBlobWithPicker(blob: Blob, fileName: string, mimeType: string
     return;
   }
 
-  const extension = fileName.endsWith(".pdf") ? ".pdf" : ".docx";
+  const extension = getFileExtension(fileName);
   const handle = await pickerWindow.showSaveFilePicker({
     suggestedName: fileName,
     types: [
       {
-        description: extension === ".pdf" ? "PDF 文件" : "Word 文档",
+        description: getFilePickerDescription(extension),
         accept: {
           [mimeType]: [extension]
         }
@@ -1902,6 +1944,32 @@ async function saveBlobWithPicker(blob: Blob, fileName: string, mimeType: string
 
   await writable.write(blob);
   await writable.close();
+}
+
+function getFileExtension(fileName: string) {
+  const extension = fileName.match(/\.[^.]+$/)?.[0];
+
+  return extension || ".txt";
+}
+
+function getFilePickerDescription(extension: string) {
+  if (extension === ".pdf") {
+    return "PDF 文件";
+  }
+
+  if (extension === ".docx") {
+    return "Word 文档";
+  }
+
+  if (extension === ".csv") {
+    return "CSV 表格";
+  }
+
+  if (extension === ".xls") {
+    return "Excel 表格";
+  }
+
+  return "文件";
 }
 
 function isSaveCancelled(error: unknown) {
@@ -1932,7 +2000,7 @@ function EditablePanel({
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold tracking-normal text-slate-950">{label}</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{helper}</p>
+          {helper ? <p className="mt-1 text-sm leading-6 text-slate-500">{helper}</p> : null}
         </div>
         {onCopy ? (
           <button
@@ -1955,6 +2023,93 @@ function EditablePanel({
   );
 }
 
+function ActionItemsPanel({
+  items,
+  isLoading,
+  onCopy,
+  onTimestampClick
+}: {
+  items: ActionItem[];
+  isLoading: boolean;
+  onCopy: () => void;
+  onTimestampClick?: (seconds: number) => void;
+}) {
+  const columns = ["议题", "责任人", "预期结果", "截止时间", "溯源时间戳"];
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-normal text-slate-950">行动项矩阵</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            核心亮点，快速查看待办责任、预期结果和溯源时间。
+            {onTimestampClick ? <span className="ml-1 text-blue-600">点击时间戳可跳转播放。</span> : null}
+          </p>
+        </div>
+        <button
+          className={`${buttonBase} shrink-0 border-slate-200 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-50`}
+          type="button"
+          disabled={items.length === 0}
+          onClick={onCopy}
+        >
+          复制
+        </button>
+      </div>
+
+      {items.length > 0 ? (
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="min-w-[760px] w-full border-collapse text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-medium text-slate-500">
+              <tr>
+                {columns.map((column) => (
+                  <th key={column} className="border-b border-slate-200 px-3 py-3">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-800">
+              {items.map((item, index) => {
+                const tsSeconds = parseTimestampToSeconds(item.sourceTimestamp);
+                const isClickable = tsSeconds !== null && onTimestampClick != null;
+                return (
+                  <tr key={`${item.topic}-${index}`} className="align-top">
+                    <td className="w-[22%] px-3 py-3 leading-6">{item.topic}</td>
+                    <td className="w-[14%] px-3 py-3 leading-6">{item.owner}</td>
+                    <td className="w-[30%] px-3 py-3 leading-6">{item.expectedResult}</td>
+                    <td className="w-[14%] px-3 py-3 leading-6">{item.deadline}</td>
+                    <td className="w-[20%] px-3 py-3 font-mono text-xs leading-6">
+                      {isClickable ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 active:scale-95"
+                          onClick={() => onTimestampClick(tsSeconds)}
+                          title={`跳转到 ${item.sourceTimestamp}`}
+                        >
+                          <svg className="h-2.5 w-2.5 shrink-0 fill-current" viewBox="0 0 10 10">
+                            <polygon points="2,1 9,5 2,9" />
+                          </svg>
+                          {item.sourceTimestamp}
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">{item.sourceTimestamp}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm leading-6 text-slate-500">
+          {isLoading ? "正在生成行动项矩阵..." : "等待生成行动项矩阵"}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function readLocalRecords(retentionDays: number) {
   try {
     const savedRecords = window.localStorage.getItem(localRecordsStorageKey);
@@ -1966,7 +2121,12 @@ function readLocalRecords(retentionDays: number) {
     const parsedRecords = JSON.parse(savedRecords) as MeetingRecord[];
 
     return Array.isArray(parsedRecords)
-      ? parsedRecords.filter((record) => isRecordRetained(record, retentionDays))
+      ? parsedRecords
+          .filter((record) => isRecordRetained(record, retentionDays))
+          .map((record) => ({
+            ...record,
+            actionItems: normalizeActionItems(record.actionItems)
+          }))
       : [];
   } catch {
     return [];
@@ -2049,7 +2209,7 @@ function toStoredRecord(record: MeetingRecord): StoredMeetingRecord {
     transcript: record.transcript || "",
     summary: record.summary || "",
     outline: record.outline || "",
-    todos: "",
+    todos: JSON.stringify(normalizeActionItems(record.actionItems)),
     errorMessage: record.errorMessage || "",
     createdAt: record.createdAt,
     updatedAt: record.updatedAt || new Date().toISOString()
@@ -2071,6 +2231,7 @@ function fromStoredRecord(record: StoredMeetingRecord): MeetingRecord {
     transcript: record.transcript || "",
     summary: record.summary || "",
     outline: record.outline || "",
+    actionItems: parseStoredActionItems(record.todos),
     audioFileName: record.originalFileName || "",
     audioFileSize: record.fileSizeLabel || (record.fileSize ? formatFileSize(record.fileSize) : ""),
     audioFileType: record.fileType || "",
@@ -2080,6 +2241,139 @@ function fromStoredRecord(record: StoredMeetingRecord): MeetingRecord {
     uploadNotice: "",
     errorMessage: record.errorMessage || ""
   };
+}
+
+function parseStoredActionItems(value: string | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    return normalizeActionItems(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeActionItems(value: unknown): ActionItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeActionItem(item))
+    .filter((item): item is ActionItem => Boolean(item));
+}
+
+function normalizeActionItem(value: unknown): ActionItem | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+  const topic = textValue(item.topic) || textValue(item["议题"]);
+  const expectedResult = textValue(item.expectedResult) || textValue(item["预期结果"]) || textValue(item.action) || textValue(item["行动项"]);
+
+  return {
+    topic: topic || "未明确",
+    owner: textValue(item.owner) || textValue(item["责任人"]) || "未分配",
+    expectedResult: expectedResult || "未明确",
+    deadline: textValue(item.deadline) || textValue(item.dueDate) || textValue(item["截止时间"]) || "TBD",
+    sourceTimestamp: textValue(item.sourceTimestamp) || textValue(item["溯源时间戳"]) || textValue(item["来源时间戳"]) || "未明确"
+  };
+}
+
+function textValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formatActionItemsForCopy(items: ActionItem[]) {
+  if (items.length === 0) {
+    return "";
+  }
+
+  const header = "议题\t责任人\t预期结果\t截止时间\t溯源时间戳";
+  const rows = items.map((item) =>
+    [item.topic, item.owner, item.expectedResult, item.deadline, item.sourceTimestamp]
+      .map((value) => value.replace(/\s+/g, " ").trim())
+      .join("\t")
+  );
+
+  return [header, ...rows].join("\n");
+}
+
+function buildActionItemsCsv(items: ActionItem[]) {
+  const rows = [
+    ["议题", "责任人", "预期结果", "截止时间", "溯源时间戳"],
+    ...items.map((item) => [
+      item.topic,
+      item.owner,
+      item.expectedResult,
+      item.deadline,
+      item.sourceTimestamp
+    ])
+  ];
+
+  return rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+}
+
+function escapeCsvCell(value: string) {
+  const normalizedValue = value.replace(/\r?\n/g, " ").trim();
+
+  return `"${normalizedValue.replace(/"/g, '""')}"`;
+}
+
+function buildActionItemsExcelHtml(record: MeetingRecord) {
+  const rows = record.actionItems
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.topic)}</td>
+          <td>${escapeHtml(item.owner)}</td>
+          <td>${escapeHtml(item.expectedResult)}</td>
+          <td>${escapeHtml(item.deadline)}</td>
+          <td>${escapeHtml(item.sourceTimestamp)}</td>
+        </tr>`
+    )
+    .join("");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    h1 { font-size: 18px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #d9dee8; padding: 8px; vertical-align: top; }
+    th { background: #f3f5f8; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(record.title)} - 行动项矩阵</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>议题</th>
+        <th>责任人</th>
+        <th>预期结果</th>
+        <th>截止时间</th>
+        <th>溯源时间戳</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function normalizeTaskStatus(value: string | undefined): TaskStatus {
@@ -2286,7 +2580,7 @@ function formatDateLabel(value: string) {
 
 function getFriendlyTranscribeError(message?: string) {
   if (message?.includes("API Key") || message?.includes("api key") || message?.includes("密钥")) {
-    return "未检测到阿里云 API Key，请检查 .env.local 配置。";
+    return "本地识别组件未就绪，请检查本机 Python 和模型环境。";
   }
 
   if (message?.includes("格式") || message?.includes("format")) {
@@ -2296,37 +2590,9 @@ function getFriendlyTranscribeError(message?: string) {
   return "转写失败，请重试或检查音频文件。";
 }
 
-function getMissingSettingsFields(form: SettingsForm, settings: PublicRuntimeConfig | null) {
-  const missingFields: string[] = [];
-
-  if (!form.dashscopeApiKey.trim() && !settings?.dashscopeApiKeySaved) {
-    missingFields.push("DASHSCOPE_API_KEY");
-  }
-
-  if (form.ossEnabled) {
-    if (!form.ossRegion.trim()) {
-      missingFields.push("OSS_REGION");
-    }
-
-    if (!form.ossBucket.trim()) {
-      missingFields.push("OSS_BUCKET");
-    }
-
-    if (!form.ossAccessKeyId.trim() && !settings?.ossAccessKeyIdSaved) {
-      missingFields.push("OSS_ACCESS_KEY_ID");
-    }
-
-    if (!form.ossAccessKeySecret.trim() && !settings?.ossAccessKeySecretSaved) {
-      missingFields.push("OSS_ACCESS_KEY_SECRET");
-    }
-  }
-
-  return missingFields;
-}
-
 function getFriendlyGenerateError(message?: string) {
   if (message?.includes("API Key") || message?.includes("api key") || message?.includes("密钥")) {
-    return "未检测到大模型 API Key，请检查 .env.local 配置。";
+    return "本地摘要组件未就绪，请检查本机 Python 和模型环境。";
   }
 
   return "会议纪要生成失败，请稍后重试。";
@@ -2336,18 +2602,18 @@ function getFriendlyOssError(responseText?: string) {
   const ossCode = getOssErrorCode(responseText);
 
   if (ossCode === "UserDisable") {
-    return "OSS 上传失败：当前 OSS 账号或服务不可用，请检查阿里云 OSS 是否已开通、是否欠费，或 AccessKey/RAM 用户是否被禁用。";
+    return "上传失败：当前上传配置不可用，请检查本机或外部上传设置。";
   }
 
   if (ossCode === "AccessDenied") {
-    return "OSS 上传失败：当前 AccessKey 没有上传权限，请检查 Bucket 权限或 RAM 授权。";
+    return "上传失败：当前上传权限不足，请检查配置。";
   }
 
   if (ossCode === "NoSuchBucket") {
-    return "OSS 上传失败：没有找到当前 Bucket，请检查 OSS_BUCKET 和 OSS_REGION 配置。";
+    return "上传失败：没有找到当前目标位置，请检查配置。";
   }
 
-  return "OSS 直传失败，请检查 OSS 配置、Bucket CORS 或网络后重试。";
+  return "上传失败，请检查配置或网络后重试。";
 }
 
 function getOssErrorCode(responseText?: string) {
@@ -2370,4 +2636,200 @@ function getFileTypeFromName(fileName: string) {
   }
 
   return `${extension.toUpperCase()} 音频`;
+}
+
+function parseTimestampToSeconds(timestamp: string): number | null {
+  if (!timestamp || timestamp === "未明确" || timestamp === "TBD" || timestamp === "未指定") {
+    return null;
+  }
+  const hhmmss = timestamp.match(/(\d+):(\d{2}):(\d{2})/);
+  if (hhmmss) {
+    return parseInt(hhmmss[1]) * 3600 + parseInt(hhmmss[2]) * 60 + parseInt(hhmmss[3]);
+  }
+  const mmss = timestamp.match(/(\d+):(\d{2})/);
+  if (mmss) {
+    return parseInt(mmss[1]) * 60 + parseInt(mmss[2]);
+  }
+  return null;
+}
+
+const workflowStepDefs = [
+  { label: "上传录音" },
+  { label: "本地转写" },
+  { label: "说话人分离" },
+  { label: "文本清洗" },
+  { label: "会议摘要" },
+  { label: "行动项矩阵" },
+  { label: "会议大纲" },
+  { label: "导出" },
+];
+
+function getWorkflowStepStatus(
+  stepIndex: number,
+  taskStatus: TaskStatus,
+  hasRecord: boolean,
+  isSummarizingFailed: boolean
+): "idle" | "active" | "done" | "error" {
+  if (!hasRecord || taskStatus === "idle") return "idle";
+
+  if (taskStatus === "failed") {
+    const failedAt = isSummarizingFailed ? 4 : 1;
+    if (stepIndex < failedAt) return "done";
+    if (stepIndex === failedAt) return "error";
+    return "idle";
+  }
+  if (taskStatus === "queued" || taskStatus === "uploading") {
+    if (stepIndex === 0) return "active";
+    return "idle";
+  }
+  if (taskStatus === "transcribing" || taskStatus === "still_processing") {
+    if (stepIndex === 0) return "done";
+    if (stepIndex >= 1 && stepIndex <= 3) return "active";
+    return "idle";
+  }
+  if (taskStatus === "summarizing") {
+    if (stepIndex <= 3) return "done";
+    if (stepIndex >= 4 && stepIndex <= 6) return "active";
+    return "idle";
+  }
+  if (taskStatus === "completed") {
+    return "done";
+  }
+  return "idle";
+}
+
+function WorkflowProgress({
+  taskStatus,
+  hasRecord,
+  isSummarizingFailed
+}: {
+  taskStatus: TaskStatus;
+  hasRecord: boolean;
+  isSummarizingFailed: boolean;
+}) {
+  return (
+    <div className="mb-5 overflow-x-auto rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+      <div className="flex min-w-max items-center gap-0">
+        {workflowStepDefs.map((step, index) => {
+          const status = getWorkflowStepStatus(index, taskStatus, hasRecord, isSummarizingFailed);
+          return (
+            <div key={step.label} className="flex items-center">
+              <div
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                  status === "done"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : status === "active"
+                    ? "border-amber-300 bg-amber-50 text-amber-800 shadow-sm"
+                    : status === "error"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-slate-200 bg-slate-50 text-slate-400"
+                }`}
+              >
+                <span className="text-[11px] leading-none">
+                  {status === "done" ? "✓" : status === "active" ? "⟳" : status === "error" ? "✕" : "○"}
+                </span>
+                <span>{step.label}</span>
+              </div>
+              {index < workflowStepDefs.length - 1 ? (
+                <div
+                  className={`mx-1 text-xs font-bold ${
+                    getWorkflowStepStatus(index, taskStatus, hasRecord, isSummarizingFailed) === "done"
+                      ? "text-emerald-400"
+                      : "text-slate-300"
+                  }`}
+                >
+                  →
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function formatAudioTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function FloatingAudioPlayer({
+  isPlaying,
+  currentTime,
+  duration,
+  onPlayPause,
+  onSeek,
+  onClose
+}: {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  onPlayPause: () => void;
+  onSeek: (seconds: number) => void;
+  onClose: () => void;
+}) {
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 1;
+  const progress = Math.min(1, currentTime / safeDuration);
+
+  return (
+    <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-all">
+      {/* 播放/暂停 */}
+      <button
+        type="button"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 active:scale-95"
+        onClick={onPlayPause}
+        title={isPlaying ? "暂停" : "播放"}
+      >
+        {isPlaying ? (
+          <svg className="h-3 w-3 fill-current" viewBox="0 0 10 10">
+            <rect x="1.5" y="1" width="2.5" height="8" rx="0.5" />
+            <rect x="6" y="1" width="2.5" height="8" rx="0.5" />
+          </svg>
+        ) : (
+          <svg className="h-3 w-3 fill-current" viewBox="0 0 10 10">
+            <polygon points="2,1 9,5 2,9" />
+          </svg>
+        )}
+      </button>
+
+      {/* 进度条 + 时间 */}
+      <div className="flex flex-col gap-1">
+        <input
+          type="range"
+          min={0}
+          max={Math.floor(safeDuration)}
+          value={Math.floor(currentTime)}
+          step={1}
+          className="h-1.5 w-40 cursor-pointer appearance-none rounded-full bg-slate-200 accent-slate-900"
+          onChange={(e) => onSeek(Number(e.target.value))}
+        />
+        <div className="flex justify-between font-mono text-[10px] text-slate-400">
+          <span>{formatAudioTime(currentTime)}</span>
+          <span>{formatAudioTime(Number.isFinite(duration) && duration > 0 ? duration : 0)}</span>
+        </div>
+      </div>
+
+      {/* 关闭 */}
+      <button
+        type="button"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        onClick={onClose}
+        title="关闭播放器"
+      >
+        <svg className="h-3 w-3 stroke-current" viewBox="0 0 10 10" strokeWidth="2" fill="none">
+          <line x1="1" y1="1" x2="9" y2="9" />
+          <line x1="9" y1="1" x2="1" y2="9" />
+        </svg>
+      </button>
+
+      {/* 进度色块（装饰用） */}
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-slate-900 transition-all"
+        style={{ width: `${progress * 100}%` }}
+      />
+    </div>
+  );
 }

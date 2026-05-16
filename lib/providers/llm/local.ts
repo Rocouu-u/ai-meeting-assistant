@@ -1,64 +1,17 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { spawn } from "node:child_process";
 import { ProviderError } from "../errors";
 import { buildMeetingSummaryPrompt } from "../../prompts/meeting-summary";
 import type { ActionItem, LlmProvider } from "./types";
-import { getQwenConfig } from "../../runtime-config";
 
-type QwenChatCompletionResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-  error?: {
-    message?: string;
-  };
-};
-
-export const qwenLlmProvider: LlmProvider = {
-  name: "qwen",
+export const localLlmProvider: LlmProvider = {
+  name: "local",
   async generateMeetingReport({ transcript }) {
-    const { apiKey, baseUrl, model } = getQwenConfig();
-
-    if (!apiKey) {
-      throw new ProviderError("还没有配置阿里云百炼 API Key。请先在系统配置中填写 DASHSCOPE_API_KEY。", 400);
-    }
-
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "你是专业的中文会议纪要整理助手。请严格返回合法 JSON，不要输出 Markdown、代码块或无关解释。"
-          },
-          {
-            role: "user",
-            content: buildMeetingSummaryPrompt(transcript)
-          }
-        ],
-        temperature: 0.1
-      })
-    });
-
-    const result = (await response.json()) as QwenChatCompletionResponse;
-
-    if (!response.ok) {
-      throw new ProviderError(result.error?.message || "阿里云百炼 Qwen 生成失败，请检查 API Key 或模型权限。", 502);
-    }
-
-    const outputText = result.choices?.[0]?.message?.content?.trim();
-
-    if (!outputText) {
-      throw new ProviderError("阿里云百炼 Qwen 没有返回生成内容，请稍后再试。", 502);
-    }
-
-    const parsed = splitGeneratedReport(outputText);
+    const prompt = buildMeetingSummaryPrompt(transcript);
+    const resultText = await runLocalSummaryModel(prompt);
+    const parsed = splitGeneratedReport(resultText);
 
     return {
       message: "会议纪要、报告提纲和行动项矩阵已生成。",
@@ -68,6 +21,56 @@ export const qwenLlmProvider: LlmProvider = {
     };
   }
 };
+
+async function runLocalSummaryModel(promptText: string) {
+  const tempDir = await mkdtemp(join(tmpdir(), "meeting-ai-summary-"));
+  const promptPath = join(tempDir, "prompt.txt");
+  const outputPath = join(tempDir, "output.json");
+
+  try {
+    await writeFile(promptPath, promptText, "utf-8");
+    await runPythonScript(join(process.cwd(), "scripts", "local-summary.py"), [promptPath, outputPath]);
+    const raw = await readFile(outputPath, "utf-8");
+    const parsed = JSON.parse(raw) as { text?: string };
+    return parsed.text?.trim() || "";
+  } catch (error) {
+    throw providerErrorFromUnknown(error, "本地会议纪要生成失败，请检查 Python 和 Qwen 本地模型环境。");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+function runPythonScript(scriptPath: string, args: string[]) {
+  const pythonCommand = process.env.LOCAL_PYTHON_PATH || "python3";
+
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(pythonCommand, [scriptPath, ...args], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env
+      }
+    });
+
+    let stderr = "";
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(stderr || `Python 脚本执行失败，退出码 ${code ?? "unknown"}`));
+    });
+  });
+}
 
 function splitGeneratedReport(outputText: string): {
   summary: string;
@@ -93,11 +96,12 @@ function splitGeneratedReport(outputText: string): {
       actionItems: normalizeActionItems(parsed.actionItems)
     };
   } catch {
-    // 兼容旧模型偶尔返回 Markdown 的情况，避免生成失败影响主流程。
+    // 兼容模型偶尔输出非 JSON 内容的情况。
   }
 
-  const outlineHeading = "# 二、报告提纲";
-  const outlineStart = cleanedText.indexOf(outlineHeading);
+  const outlineHeading = "# 二、报告大纲";
+  const altOutlineHeading = "# 二、报告提纲";
+  const outlineStart = Math.max(cleanedText.indexOf(outlineHeading), cleanedText.indexOf(altOutlineHeading));
 
   if (outlineStart >= 0) {
     return {
@@ -144,4 +148,13 @@ function normalizeActionItem(value: unknown): ActionItem | null {
 
 function textValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function providerErrorFromUnknown(error: unknown, fallbackMessage: string) {
+  if (error instanceof ProviderError) {
+    return error;
+  }
+
+  const errorObject = error as { message?: string };
+  return new ProviderError(errorObject?.message || fallbackMessage, 500);
 }
