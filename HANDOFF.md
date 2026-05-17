@@ -85,20 +85,22 @@ npm run dev
 | 行动项矩阵表格 | ✅ 已完成 | 含溯源时间戳 |
 | 时间戳点击跳转播放 | ✅ 已完成 | 含悬浮迷你播放控制条 |
 | 导出（Excel/CSV/Word/PDF） | ✅ 已完成 | |
-| **会议摘要/大纲/行动项（LLM）** | ⚠️ **待本地化** | **目前调用阿里云 DashScope，见第五节** |
+| 会议摘要/大纲/行动项（LLM） | ✅ 完全本地 | Qwen2.5-3B-Instruct，首次使用自动下载模型（~6 GB） |
 | OSS 云存储 | ✅ 已禁用 | `OSS_ENABLED=false` |
 
 ---
 
-## 五、⚠️ 待完成：LLM 本地化
+## 五、LLM 本地化（已完成）
 
 这是你接手后需要做的唯一一项核心工作。
 
-### 背景
+### 说明
 
-当前 `.env.local` 里有 `LLM_PROVIDER=qwen`，会议摘要/大纲/行动项通过阿里云 DashScope API 生成。本地化框架已经写好了（`lib/providers/llm/local.ts` + `scripts/local-summary.py`），只差模型下载和配置切换。
+已切换为 `LLM_PROVIDER=local`，使用 `qwen/Qwen2.5-3B-Instruct` 本地推理，不再调用任何云 API。模型首次使用时通过 ModelScope 自动下载（约 6 GB），之后缓存在 `~/.cache/modelscope/hub/`。
 
-### 步骤
+以下步骤仅供参考或需要重新配置时使用。
+
+### 步骤（已执行，供参考）
 
 #### 第 1 步：安装缺少的 Python 包
 
