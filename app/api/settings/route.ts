@@ -13,6 +13,7 @@ export async function GET() {
 export async function POST(request: Request) {
   let body: {
     dashscopeApiKey?: string;
+    hfToken?: string;
     ossEnabled?: boolean;
     ossRegion?: string;
     ossBucket?: string;
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
   const storedConfig = readStoredRuntimeConfig();
   const nextConfig = {
     dashscopeApiKey: body.dashscopeApiKey?.trim() || storedConfig.dashscopeApiKey || "",
+    hfToken: body.hfToken?.trim() || storedConfig.hfToken || "",
     ossEnabled: body.ossEnabled ?? storedConfig.ossEnabled ?? false,
     ossRegion: body.ossRegion?.trim() || storedConfig.ossRegion || "",
     ossBucket: body.ossBucket?.trim() || storedConfig.ossBucket || "",

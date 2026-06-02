@@ -21,6 +21,7 @@ export type StoredMeetingRecord = {
   errorMessage?: string;
   createdAt?: string;
   updatedAt?: string;
+  transcriptId?: string;
 };
 
 const storageDir = getWritableDataDir();
@@ -81,6 +82,7 @@ export function saveMeetingRecord(record: StoredMeetingRecord) {
       audio_file_name,
       audio_file_size,
       audio_file_type,
+      transcript_id,
       created_at,
       updated_at
     ) VALUES (
@@ -103,6 +105,7 @@ export function saveMeetingRecord(record: StoredMeetingRecord) {
       ${sqlText(record.originalFileName || "")},
       ${sqlText(record.fileSizeLabel || "")},
       ${sqlText(record.fileType || "")},
+      ${sqlText(record.transcriptId || "")},
       ${sqlText(createdAt)},
       ${sqlText(updatedAt)}
     )
@@ -125,6 +128,7 @@ export function saveMeetingRecord(record: StoredMeetingRecord) {
       audio_file_name = excluded.audio_file_name,
       audio_file_size = excluded.audio_file_size,
       audio_file_type = excluded.audio_file_type,
+      transcript_id = excluded.transcript_id,
       updated_at = excluded.updated_at;
   `);
 
@@ -224,6 +228,7 @@ function initDatabase() {
   addColumnIfMissing("file_size_label", "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing("file_type", "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing("duration_seconds", "REAL");
+  addColumnIfMissing("transcript_id", "TEXT NOT NULL DEFAULT ''");
 }
 
 function addColumnIfMissing(columnName: string, columnDefinition: string) {
@@ -245,6 +250,7 @@ function selectColumns() {
     file_size AS fileSize,
     COALESCE(NULLIF(file_size_label, ''), audio_file_size) AS fileSizeLabel,
     COALESCE(NULLIF(file_type, ''), audio_file_type) AS fileType,
+    transcript_id AS transcriptId,
     duration,
     duration_seconds AS durationSeconds,
     status,

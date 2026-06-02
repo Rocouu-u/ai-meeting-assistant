@@ -9,6 +9,14 @@ from pathlib import Path
 
 PUNCTUATION = {"。", "！", "？", "；", "!", "?", ";", ":", "：", "，", ","}
 STRONG_SENTENCE_ENDINGS = {"。", "！", "？", "!", "?"}
+
+# 语气词/口水词过滤列表
+FILLER_WORDS = {
+    "呃", "嗯", "啊", "哦", "哈", "噢", "嘿", "唉", "哎", "欸", "哟", "喂",
+    "嗐", "哼", "咦", "哇", "呀", "嘛", "呗", "吧", "啦", "呢", "咯",
+    "嗯嗯", "啊啊", "哦哦", "哦哦哦",
+    "对对对", "好好好", "是是是", "嗯嗯嗯",
+}
 MODEL_CACHE_ALIASES = {
     "fsmn-vad": [("damo", "speech_fsmn_vad_zh-cn-16k-common-pytorch")],
     "cam++": [("damo", "speech_campplus_sv_zh-cn_16k-common")],
@@ -320,7 +328,7 @@ def join_tokens(tokens):
 
 
 def run_diarization(audio_path: Path):
-    diarize_script = Path.cwd() / "scripts" / "modelscope-diarize.py"
+    diarize_script = Path.cwd() / "scripts" / "pyannote-diarize.py"
     output_path = audio_path.parent / "diarization.json"
     args = [sys.executable, str(diarize_script), str(audio_path), str(output_path)]
     timeout_seconds = get_int_env("LOCAL_DIARIZATION_TIMEOUT_SECONDS", 900)
@@ -379,6 +387,9 @@ def build_transcript_output(asr_segments, speaker_segments, diarization_enabled)
 
     stable_segments = assign_stable_speakers(labeled_segments)
     merged_segments = merge_labeled_segments(stable_segments)
+    merged_segments = absorb_orphan_segments(merged_segments)
+    merged_segments = clean_filler_segments(merged_segments)
+    merged_segments = absorb_tiny_labeled_segments(merged_segments)
     lines = [format_segment(item["speakerName"], item["begin_time"], item["text"]) for item in merged_segments]
 
     return "\n\n".join(lines), [serialize_segment(item) for item in merged_segments]
@@ -840,6 +851,87 @@ def merge_text(previous_text, current_text):
     if previous_text[-1].isascii() and current_text[0].isascii() and previous_text[-1].isalnum() and current_text[0].isalnum():
         return f"{previous_text} {current_text}"
     return f"{previous_text}{current_text}"
+
+
+def absorb_tiny_labeled_segments(segments):
+    """处理有说话人但内容极短（核心文字≤3字）的段：
+    - 与前一段同一说话人 → 合并到前一段尾部
+    - 不同说话人 → 直接丢弃（≤3字的插话几乎都是语气噪声）
+    """
+    import re
+    if not segments:
+        return segments
+    result = []
+    for seg in segments:
+        text = (seg.get("text") or "").strip()
+        core = re.sub(r'[。！？!?，,、\s]', '', text)
+        if len(core) <= 3 and result:
+            prev = result[-1]
+            if prev.get("speakerName") == seg.get("speakerName"):
+                # 同一说话人：追加到上一段
+                prev["text"] = merge_text(prev["text"], text)
+                prev["end_time"] = seg.get("end_time") or prev.get("end_time")
+            # 不同说话人：丢弃，不合并到别人的发言里
+        else:
+            result.append(dict(seg))
+    return result
+
+
+def absorb_orphan_segments(segments):
+    """把无说话人的极短片段（≤8字）合并到相邻有说话人的片段，减少断行。"""
+    if not segments:
+        return segments
+
+    result = list(segments)
+    changed = True
+    while changed:
+        changed = False
+        new = []
+        i = 0
+        while i < len(result):
+            seg = result[i]
+            text = (seg.get("text") or "").strip()
+            if seg.get("speakerName") is None and len(text) <= 8:
+                # 优先合并到前一个有说话人的段
+                if new and new[-1].get("speakerName") is not None:
+                    prev = new[-1]
+                    prev["text"] = merge_text(prev["text"], text)
+                    prev["end_time"] = seg.get("end_time") or prev.get("end_time")
+                    changed = True
+                    i += 1
+                    continue
+                # 否则合并到后一个
+                if i + 1 < len(result) and result[i + 1].get("speakerName") is not None:
+                    nxt = result[i + 1]
+                    nxt["text"] = merge_text(text, nxt["text"])
+                    nxt["begin_time"] = seg.get("begin_time") or nxt.get("begin_time")
+                    changed = True
+                    i += 1
+                    continue
+            new.append(seg)
+            i += 1
+        result = new
+
+    return result
+
+
+def clean_filler_segments(segments):
+    """移除纯语气词片段，并清理段内首尾语气词。"""
+    cleaned = []
+    for seg in segments:
+        text = (seg.get("text") or "").strip()
+        # 去除首尾标点后判断是否纯语气词
+        core = text.rstrip("。！？!?，,、").strip()
+        if core in FILLER_WORDS:
+            continue
+        # 清理段首语气词（单字+标点 或 单字）
+        import re
+        text = re.sub(r'^([呃嗯啊哦哈噢嘿唉哎欸哟喂嗐哼咦哇呀嘛呗])[，,、\s]*', '', text)
+        if text.strip():
+            seg = dict(seg)
+            seg["text"] = text.strip()
+            cleaned.append(seg)
+    return cleaned
 
 
 def format_segment(speaker_name, start_ms, text):

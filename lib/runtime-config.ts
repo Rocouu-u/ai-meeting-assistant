@@ -3,6 +3,7 @@ import { getWritableDataDir, getWritableDataPath } from "./storage-paths";
 
 export type RuntimeConfig = {
   dashscopeApiKey?: string;
+  hfToken?: string;
   ossEnabled?: boolean;
   ossRegion?: string;
   ossBucket?: string;
@@ -14,6 +15,9 @@ export type PublicRuntimeConfig = {
   dashscopeApiKeyConfigured: boolean;
   dashscopeApiKeySaved: boolean;
   dashscopeApiKeyMasked: string;
+  hfTokenConfigured: boolean;
+  hfTokenSaved: boolean;
+  hfTokenMasked: string;
   ossEnabled: boolean;
   ossRegion: string;
   ossBucket: string;
@@ -43,6 +47,7 @@ export function readRuntimeConfig(): RuntimeConfig {
 
   return {
     dashscopeApiKey: fileConfig.dashscopeApiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || process.env.ALIYUN_API_KEY,
+    hfToken: fileConfig.hfToken || process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN,
     ossEnabled: fileConfig.ossEnabled ?? process.env.OSS_ENABLED === "true",
     ossRegion: fileConfig.ossRegion || process.env.OSS_REGION || defaultOssRegion,
     ossBucket: fileConfig.ossBucket || process.env.OSS_BUCKET || "",
@@ -65,6 +70,7 @@ export function saveRuntimeConfig(input: RuntimeConfig) {
   const previousConfig = readStoredRuntimeConfig();
   const nextConfig: RuntimeConfig = {
     dashscopeApiKey: input.dashscopeApiKey || previousConfig.dashscopeApiKey || "",
+    hfToken: input.hfToken || previousConfig.hfToken || "",
     ossEnabled: input.ossEnabled ?? previousConfig.ossEnabled ?? true,
     ossRegion: input.ossRegion || previousConfig.ossRegion || defaultOssRegion,
     ossBucket: input.ossBucket ?? previousConfig.ossBucket ?? "",
@@ -83,6 +89,8 @@ export function readPublicRuntimeConfig(): PublicRuntimeConfig {
   const storedOssEnabled = storedConfig.ossEnabled ?? true;
   const effectiveOssEnabled = effectiveConfig.ossEnabled ?? true;
   const dashscopeApiKeySaved = Boolean(storedConfig.dashscopeApiKey);
+  const hfTokenSaved = Boolean(storedConfig.hfToken);
+  const hfTokenConfigured = Boolean(effectiveConfig.hfToken);
   const dashscopeApiKeyConfigured = Boolean(effectiveConfig.dashscopeApiKey);
   const ossAccessKeyIdSaved = Boolean(storedConfig.ossAccessKeyId);
   const ossAccessKeySecretSaved = Boolean(storedConfig.ossAccessKeySecret);
@@ -109,6 +117,9 @@ export function readPublicRuntimeConfig(): PublicRuntimeConfig {
     dashscopeApiKeyConfigured,
     dashscopeApiKeySaved,
     dashscopeApiKeyMasked: maskSecret(storedConfig.dashscopeApiKey),
+    hfTokenConfigured,
+    hfTokenSaved,
+    hfTokenMasked: maskSecret(storedConfig.hfToken),
     ossEnabled: storedOssEnabled,
     ossRegion: storedConfig.ossRegion || defaultOssRegion,
     ossBucket: storedConfig.ossBucket || "",

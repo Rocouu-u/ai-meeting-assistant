@@ -15,6 +15,7 @@ import type {
   TranscriptSegment
 } from "./types";
 import { getWritableDataDir } from "../../storage-paths";
+import { readRuntimeConfig } from "../../runtime-config";
 
 type LocalJobStatus =
   | {
@@ -125,13 +126,17 @@ function spawnWorker(jobId: string, inputPath: string, statusPath: string, diari
   const scriptPath = join(process.cwd(), "scripts", "local-transcribe-job.py");
   const args = [scriptPath, inputPath, statusPath, diarizationEnabled ? "1" : "0"];
 
+  const runtimeConfig = readRuntimeConfig();
+  const hfToken = runtimeConfig.hfToken || process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN || "";
+
   const child = spawn(pythonCommand, args, {
     cwd: process.cwd(),
     stdio: "ignore",
     env: {
       ...process.env,
       LOCAL_TRANSCRIBE_JOB_ID: jobId,
-      LOCAL_TRANSCRIBE_JOB_TIMEOUT_MS: String(jobTimeoutMs)
+      LOCAL_TRANSCRIBE_JOB_TIMEOUT_MS: String(jobTimeoutMs),
+      ...(hfToken ? { HF_TOKEN: hfToken, HUGGING_FACE_HUB_TOKEN: hfToken } : {})
     }
   });
 

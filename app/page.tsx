@@ -113,6 +113,7 @@ type StoredMeetingRecord = {
   errorMessage?: string;
   createdAt?: string;
   updatedAt?: string;
+  transcriptId?: string;
 };
 
 type HistoryResponse = {
@@ -128,6 +129,9 @@ type PublicRuntimeConfig = {
   dashscopeApiKeyConfigured: boolean;
   dashscopeApiKeySaved: boolean;
   dashscopeApiKeyMasked: string;
+  hfTokenConfigured: boolean;
+  hfTokenSaved: boolean;
+  hfTokenMasked: string;
   ossEnabled: boolean;
   ossRegion: string;
   ossBucket: string;
@@ -359,6 +363,17 @@ export default function Home() {
     window.localStorage.setItem(localRecordsStorageKey, JSON.stringify(records));
   }, [hasLoadedLocalRecords, records]);
 
+  // 当 activeId 变化时，若没有 blob URL 就从服务端接口补上音频地址（历史记录场景）
+  useEffect(() => {
+    if (!activeId || !hasLoadedLocalRecords) return;
+    setAudioObjectUrls((prev) => {
+      if (prev[activeId]) return prev;
+      const rec = recordsRef.current.find((r) => r.id === activeId);
+      if (!rec?.transcriptId) return prev;
+      return { ...prev, [activeId]: `/api/audio/${rec.transcriptId}` };
+    });
+  }, [activeId, hasLoadedLocalRecords]);
+
   const showNotice = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2200);
@@ -404,6 +419,13 @@ export default function Home() {
   const openRecord = (recordId: string) => {
     setActiveId(recordId);
     setGenerateStatus("");
+    // 若没有 blob URL（历史记录），用服务端音频接口
+    setAudioObjectUrls((prev) => {
+      if (prev[recordId]) return prev;
+      const rec = recordsRef.current.find((r) => r.id === recordId);
+      if (!rec?.transcriptId) return prev;
+      return { ...prev, [recordId]: `/api/audio/${rec.transcriptId}` };
+    });
   };
 
   const toggleSelectedRecord = (recordId: string) => {
@@ -1329,6 +1351,25 @@ export default function Home() {
                 onClose={() => {
                   setShowSettings(false);
                 }}
+                onSave={async (payload) => {
+                  setSettingsStatus("正在保存…");
+                  try {
+                    const res = await fetch("/api/settings", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload)
+                    });
+                    const result = (await res.json()) as { ok: boolean; message?: string; config?: PublicRuntimeConfig };
+                    if (result.ok && result.config) {
+                      setSettings(result.config);
+                      setSettingsStatus("✓ " + (result.message || "配置已保存。"));
+                    } else {
+                      setSettingsStatus("保存失败：" + (result.message || "未知错误"));
+                    }
+                  } catch {
+                    setSettingsStatus("保存失败：网络错误");
+                  }
+                }}
               />
             ) : (
               <>
@@ -1584,21 +1625,35 @@ function SettingsPanel({
   currentOrigin,
   settings,
   settingsStatus,
-  onClose
+  onClose,
+  onSave
 }: {
   currentOrigin: string;
   settings: PublicRuntimeConfig | null;
   settingsStatus: string;
   onClose: () => void;
+  onSave: (payload: Record<string, string>) => Promise<void>;
 }) {
+  const [dashscopeApiKey, setDashscopeApiKey] = useState("");
+  const [hfToken, setHfToken] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave({ dashscopeApiKey, hfToken });
+    setSaving(false);
+    setDashscopeApiKey("");
+    setHfToken("");
+  };
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-slate-500">初始化设置</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">本地状态</h2>
+          <p className="text-sm font-medium text-slate-500">系统设置</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">API 配置</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            现在默认使用本地转写和本地摘要，不需要填写云端 Key。
+            配置 AI 服务所需的 API Key。留空则沿用已保存的值或环境变量。
           </p>
         </div>
         <button
@@ -1610,38 +1665,90 @@ function SettingsPanel({
         </button>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-          <h3 className="text-base font-semibold text-slate-950">本地识别</h3>
-          <p className="mt-2 text-sm text-slate-600">默认启用。页面会调用本机 Python 环境里的开源模型完成转写。</p>
-        </section>
+      <div className="mt-6 flex flex-col gap-6">
+        {/* Aliyun / DashScope */}
+        <div>
+          <label className="block text-sm font-medium text-slate-800" htmlFor="dashscope-key">
+            阿里云 API Key
+            <span className="ml-2 text-xs font-normal text-slate-500">（用于会议摘要 · DashScope / 通义）</span>
+          </label>
+          {settings?.dashscopeApiKeyConfigured ? (
+            <p className="mt-1 text-xs text-emerald-600">
+              ✓ 已配置{settings.dashscopeApiKeySaved ? "（已保存）" : "（来自环境变量）"}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-amber-600">⚠ 未配置，摘要功能不可用</p>
+          )}
+          <input
+            id="dashscope-key"
+            type="password"
+            autoComplete="off"
+            placeholder={settings?.dashscopeApiKeyConfigured ? "已配置，输入新值可覆盖" : "sk-xxxxxxxxxxxxxxxx"}
+            value={dashscopeApiKey}
+            onChange={(e) => setDashscopeApiKey(e.target.value)}
+            className="mt-2 block w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
+          />
+        </div>
 
-        <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-          <h3 className="text-base font-semibold text-slate-950">本地摘要</h3>
-          <p className="mt-2 text-sm text-slate-600">默认启用。会议纪要和大纲由本机大模型生成，不需要云端 API。</p>
-        </section>
-      </div>
-
-      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-        <p className="font-medium text-slate-950">运行提示</p>
-        <p className="mt-1">如果本机没有装好 Python 或模型依赖，转写和摘要会提示环境未就绪。</p>
-        <p className="mt-1">当前访问地址：<span className="font-medium text-slate-950">{currentOrigin || "当前访问地址"}</span></p>
+        {/* HuggingFace Token */}
+        <div>
+          <label className="block text-sm font-medium text-slate-800" htmlFor="hf-token">
+            HuggingFace Token
+            <span className="ml-2 text-xs font-normal text-slate-500">（用于说话人识别 · pyannote 模型）</span>
+          </label>
+          {settings?.hfTokenConfigured ? (
+            <p className="mt-1 text-xs text-emerald-600">
+              ✓ 已配置{settings.hfTokenSaved ? "（已保存）" : "（来自环境变量）"}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-amber-600">⚠ 未配置，说话人识别可能受限</p>
+          )}
+          <input
+            id="hf-token"
+            type="password"
+            autoComplete="off"
+            placeholder={settings?.hfTokenConfigured ? "已配置，输入新值可覆盖" : "hf_xxxxxxxxxxxxxxxx"}
+            value={hfToken}
+            onChange={(e) => setHfToken(e.target.value)}
+            className="mt-2 block w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
+          />
+        </div>
       </div>
 
       {settingsStatus ? (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+        <div className={`mt-5 rounded-xl border px-4 py-3 text-sm ${
+          settingsStatus.startsWith("✓")
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : settingsStatus.startsWith("正在")
+            ? "border-slate-200 bg-white text-slate-600"
+            : "border-red-200 bg-red-50 text-red-700"
+        }`}>
           {settingsStatus}
         </div>
       ) : null}
 
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap gap-3">
         <button
-          className={`${buttonBase} border-slate-950 bg-slate-950 text-white hover:bg-slate-800`}
+          className={`${buttonBase} border-slate-950 bg-slate-950 text-white hover:bg-slate-800 disabled:opacity-50`}
+          type="button"
+          disabled={saving || (!dashscopeApiKey && !hfToken)}
+          onClick={handleSave}
+        >
+          {saving ? "保存中…" : "保存配置"}
+        </button>
+        <button
+          className={`${buttonBase} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
           type="button"
           onClick={onClose}
         >
           返回主界面
         </button>
+      </div>
+
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+        <p className="font-medium text-slate-950">运行说明</p>
+        <p className="mt-1">配置保存后立即生效，不需要重启应用。</p>
+        <p className="mt-1">当前访问地址：<span className="font-medium text-slate-950">{currentOrigin || "—"}</span></p>
       </div>
     </section>
   );
@@ -2212,7 +2319,8 @@ function toStoredRecord(record: MeetingRecord): StoredMeetingRecord {
     todos: JSON.stringify(normalizeActionItems(record.actionItems)),
     errorMessage: record.errorMessage || "",
     createdAt: record.createdAt,
-    updatedAt: record.updatedAt || new Date().toISOString()
+    updatedAt: record.updatedAt || new Date().toISOString(),
+    transcriptId: record.transcriptId || undefined
   };
 }
 
@@ -2239,7 +2347,8 @@ function fromStoredRecord(record: StoredMeetingRecord): MeetingRecord {
     durationSeconds: record.durationSeconds,
     uploadProgress: record.status === "已完成" ? 100 : undefined,
     uploadNotice: "",
-    errorMessage: record.errorMessage || ""
+    errorMessage: record.errorMessage || "",
+    transcriptId: record.transcriptId || undefined
   };
 }
 
